@@ -1,0 +1,74 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Website Fixer — Start Challenge</title>
+  <link rel="stylesheet" href="{% static 'css/wf-base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/wf-race.css' %}">
+</head>
+<body class="wf-body wf-race-body">
+<div class="wf-brief" id="wf-brief">
+  <header class="wf-race-topbar">
+    <a class="wf-race-brand" href="/">WF <span>Website Fixer</span></a>
+    <span class="wf-chip">{{ challenge.site }} · CSS RACE</span>
+    <a class="wf-btn wf-btn--ghost" href="{% url 'logout' %}">Exit</a>
+  </header>
+
+  <main class="wf-brief-main">
+    <section class="wf-brief-copy">
+      <p class="wf-kicker">THE WEBSITE IS BROKEN</p>
+      <h1>Fix it.<br><span>Race for it.</span></h1>
+      <p class="wf-lead">The HTML is ready. The styling isn't. Your job is to drive through the CSS course, clear every obstacle and reach the finish line before the clock hits zero.</p>
+      <div class="wf-rule-list">
+        <div><b>01</b><span>Drive through the CSS obstacle course</span></div>
+        <div><b>02</b><span>Clear all 6 obstacles</span></div>
+        <div><b>03</b><span>Finish within 12:00</span></div>
+      </div>
+      <button class="wf-btn wf-btn--race" id="wf-start-race">START RACE <span>→</span></button>
+      <p class="wf-start-note">The 12-minute clock starts only when you press START RACE.</p>
+    </section>
+
+    <section class="wf-broken-card" aria-label="Broken NovaCloud preview">
+      <div class="wf-broken-head"><span>●</span><span>●</span><span>●</span><b>novacloud.local</b><em>CSS STATUS: BROKEN</em></div>
+      <iframe src="{{ broken_url }}" title="Broken NovaCloud website" sandbox></iframe>
+      <div class="wf-broken-stamp">CSS<br>ERROR</div>
+    </section>
+  </main>
+</div>
+
+<div class="wf-race" id="wf-race" hidden>
+  <header class="wf-race-hud">
+    <div class="wf-hud-brand">WEBSITE <strong>FIXER</strong></div>
+    <div class="wf-hud-track"><span id="wf-race-progress"></span></div>
+    <div class="wf-hud-stat"><small>OBSTACLES</small><b id="wf-obstacles">0/6</b></div>
+    <div class="wf-hud-stat"><small>HITS</small><b id="wf-collisions">0</b></div>
+    <div class="wf-race-timer" id="wf-race-timer">12:00</div>
+  </header>
+
+  <main class="wf-track-shell" id="wf-track-shell" tabindex="0" aria-label="CSS racing game">
+    <div class="wf-track-sky"></div>
+    <div class="wf-track-sign sign-a">MARGIN</div>
+    <div class="wf-track-sign sign-b">FLEX</div>
+    <div class="wf-track-sign sign-c">GRID</div>
+    <div class="wf-track-sign sign-d">POSITION</div>
+    <div class="wf-track-road" id="wf-road">
+      <div class="wf-lane lane-1"></div><div class="wf-lane lane-2"></div><div class="wf-lane lane-3"></div>
+      <div class="wf-finish" id="wf-finish"><span>FINISH</span></div>
+      <div class="wf-obstacle obstacle-1" data-obstacle="1"><b>MARGIN</b><span>BLOCK</span></div>
+      <div class="wf-obstacle obstacle-2" data-obstacle="2"><b>PADDING</b><span>GATE</span></div>
+      <div class="wf-obstacle obstacle-3" data-obstacle="3"><b>FLEXBOX</b><span>SHIFT</span></div>
+      <div class="wf-obstacle obstacle-4" data-obstacle="4"><b>GRID</b><span>WALL</span></div>
+      <div class="wf-obstacle obstacle-5" data-obstacle="5"><b>POSITION</b><span>MOVE</span></div>
+      <div class="wf-obstacle obstacle-6" data-obstacle="6"><b>RESPONSIVE</b><span>NARROW</span></div>
+      <div class="wf-car" id="wf-car" aria-label="Player car"><span class="wf-car-light"></span><i></i><i></i></div>
+    </div>
+    <div class="wf-controls"><span>← / A</span><b>STEER</b><span>D / →</span></div>
+    <div class="wf-race-message" id="wf-race-message">GET READY</div>
+  </main>
+</div>
+
+{{ race_urls|json_script:"wf-race-urls" }}
+<script src="{% static 'js/wf-race.js' %}" defer></script>
+</body>
+</html>

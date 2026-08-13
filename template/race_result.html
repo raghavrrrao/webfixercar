@@ -1,0 +1,35 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Challenge Complete — Website Fixer</title>
+  <link rel="stylesheet" href="{% static 'css/wf-base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/wf-race.css' %}">
+</head>
+<body class="wf-body wf-result-body">
+  <main class="wf-result">
+    <div class="wf-result-burst">✓</div>
+    <p class="wf-kicker">CSS FIX COMPLETE</p>
+    <h1>YOU <span>FIXED IT.</span></h1>
+    <p class="wf-result-lead">Congratulations, {{ user.username }}. You cleared the CSS race and brought NovaCloud back to life.</p>
+    <section class="wf-result-stats">
+      <div><small>SCORE</small><strong>{{ score }}</strong><em>/ 1000</em></div>
+      <div><small>TIME</small><strong id="wf-result-time">--:--</strong></div>
+      <div><small>OBSTACLES</small><strong>{{ obstacles }}</strong><em>/ 6</em></div>
+      <div><small>HITS</small><strong>{{ collisions }}</strong></div>
+    </section>
+    <div class="wf-result-actions">
+      <a class="wf-btn wf-btn--race" href="{{ fixed_url }}" target="_blank" rel="noopener">OPEN FIXED WEBSITE ↗</a>
+      <a class="wf-btn wf-btn--ghost" href="{% url 'logout' %}">EXIT</a>
+    </div>
+    <section class="wf-fixed-reward">
+      <div class="wf-fixed-label">THE WEBSITE YOU JUST FIXED</div>
+      <iframe src="{{ fixed_url }}" title="Fixed NovaCloud website" sandbox></iframe>
+    </section>
+    <p class="wf-result-note">Your performance has been recorded. The event has one overall winner; organizers will compare the completed scores and times.</p>
+  </main>
+<script>
+(function(){var s={{ time_seconds }};document.getElementById('wf-result-time').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}());
+</script>
+</body>
+</html>

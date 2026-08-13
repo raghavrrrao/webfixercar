@@ -1,0 +1,58 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Join the challenge — Website Fixer</title>
+  <link rel="stylesheet" href="{% static 'css/wf-base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/wf-auth.css' %}">
+</head>
+<body class="wf-body">
+
+<div class="wf-auth">
+  <div class="wf-card wf-auth__card">
+    <a class="wf-auth__brand" href="/">
+      <span class="wf-brand__mark">WF</span>
+      <span>Website Fixer</span>
+    </a>
+
+    <h1 class="wf-auth__title">Claim your seat</h1>
+    <p class="wf-auth__sub">One account per PC. The 30 minute clock starts when the arena opens, not now.</p>
+
+    {% if error %}
+      <div class="wf-error" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/signup/" novalidate>
+      {% csrf_token %}
+
+      <div class="wf-field">
+        <label for="username">Player name</label>
+        <input id="username" name="username" type="text" class="wf-input" required
+               autocomplete="username" placeholder="How you want to be listed" autofocus />
+      </div>
+
+      <div class="wf-field">
+        <label for="pc_no">PC number</label>
+        <input id="pc_no" name="pc_no" type="text" class="wf-input" required autocomplete="off"
+               placeholder="e.g. PC-14" />
+      </div>
+
+      <div class="wf-field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" class="wf-input" required
+               autocomplete="new-password" placeholder="Pick something you'll remember" />
+      </div>
+
+      <button type="submit" class="wf-btn wf-btn--primary wf-btn--block">Create account &amp; continue</button>
+    </form>
+
+    <div class="wf-auth__foot">
+      Already registered? <a href="/login/">Log in</a><br>
+      <a href="/">← Back to home</a>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

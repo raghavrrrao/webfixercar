@@ -1,0 +1,37 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h1>Final design — {{ submission.pc_no }}</h1>
+
+<p>
+  This is the participant's <strong>actual submitted entry</strong>: the fixed
+  NovaCloud markup rendered with the CSS captured when their time ran out.
+  It is not the official solution, and it is not their live editor content.
+</p>
+
+<ul>
+  <li><strong>Score:</strong> {{ submission.score }}/{{ submission.total }}</li>
+  <li><strong>Eligible for judging:</strong> {% if submission.eligible %}YES{% else %}NO{% endif %}</li>
+  <li><strong>Hints used:</strong> {{ submission.hints_used }} across {{ submission.objectives_hinted }} objective{{ submission.objectives_hinted|pluralize }}</li>
+  <li><strong>Submitted:</strong> {{ submission.submitted_at }}</li>
+</ul>
+
+<p>
+  <a class="button" href="{% url 'admin:first_finalsubmission_css' submission.pk %}">View CSS</a>
+  <a class="button" href="{% url 'admin:first_finalsubmission_hints' submission.pk %}">View hint usage</a>
+  <a class="button" href="{% url 'admin:first_finalsubmission_changelist' %}">Back to submissions</a>
+</p>
+
+<!--
+  Sandboxed with no tokens: the participant's CSS is scoped to this document
+  and cannot restyle the admin around it, and no script inside can run.
+-->
+<iframe src="{{ render_url }}"
+        title="Final design for {{ submission.pc_no }}"
+        sandbox
+        style="width: 100%; height: 78vh; border: 1px solid #bbb; background: #fff;"></iframe>
+
+<p style="color: #666; font-size: 12px;">
+  Read-only preview. Nothing on this page can change the submission.
+</p>
+{% endblock %}

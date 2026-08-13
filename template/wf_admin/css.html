@@ -1,0 +1,20 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h1>Final CSS — {{ submission.pc_no }}</h1>
+
+<p>
+  The participant's immutable submitted stylesheet, exactly as it stood at the
+  deadline. Read-only.
+</p>
+
+<p>
+  <a class="button" href="{% url 'admin:first_finalsubmission_design' submission.pk %}">View final design</a>
+  <a class="button" href="{% url 'admin:first_finalsubmission_hints' submission.pk %}">View hint usage</a>
+  <a class="button" href="{% url 'admin:first_finalsubmission_changelist' %}">Back to submissions</a>
+</p>
+
+<pre style="max-height: 74vh; overflow: auto; padding: 16px; background: #1f2133;
+            color: #e8e9f2; border-radius: 8px; font-size: 12.5px; line-height: 1.6;"
+>{{ submission.final_css }}</pre>
+{% endblock %}
