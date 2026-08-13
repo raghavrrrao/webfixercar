@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Booting the arena — Website Fixer</title>
+  <title>Starting the engine — Website Fixer</title>
   <link rel="stylesheet" href="{% static 'css/wf-base.css' %}">
   <link rel="stylesheet" href="{% static 'css/wf-auth.css' %}">
 </head>
@@ -21,10 +21,10 @@
     </div>
 
     <p class="wf-launch__note">
-      Your {{ challenge.minutes }} minute race clock starts only when you press START RACE.
+      Your {{ challenge.minutes }} minute race clock starts only when the countdown ends.
     </p>
     <noscript>
-      <p class="wf-launch__note"><a href="/home/">Continue to the arena →</a></p>
+      <p class="wf-launch__note"><a href="/home/">Continue to the race →</a></p>
     </noscript>
   </div>
 </div>
@@ -34,8 +34,8 @@
     var lines = [
       '$ fetching novacloud/index.html',
       '$ loading the broken NovaCloud website',
-      '$ preparing CSS race track',
-      '$ arena ready'
+      '$ mapping the CSS repair route',
+      '$ repair route ready'
     ];
     var fill = document.getElementById('wf-launch-fill');
     var line = document.getElementById('wf-launch-line');

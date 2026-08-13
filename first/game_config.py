@@ -38,40 +38,75 @@ RACE_STATE_SYNC_SECONDS = 5
 
 # ------------------------------------------------------------- the race ----
 #
-# The course scrolls at a fixed pace, so "where the car is" is a pure function
-# of how long the race has been running. That is what lets the *server* check
-# the browser's claims: an obstacle cannot be cleared before the course has
-# carried it to the car, and the finish line cannot be reached before the
-# whole course has gone past.
+# The course is measured in metres, and the car drives it. How long a run
+# takes is up to the driver, which is the whole point: the twelve minutes
+# above is the *ceiling* on an attempt, not its length.
+#
+# It is also what lets the server check the browser's claims. Distance is
+# reported, never invented: the car cannot have travelled further than
+# `RACE_TOP_SPEED` allows in the time the server has been counting, so a
+# repair cannot be collected before the car could have reached it and the
+# finish cannot be crossed before the course could have been driven.
 
-# How long the course itself takes to scroll from the start to the finish line.
-RACE_COURSE_SECONDS = 180
+# The course: seven sections, one per CSS repair.
+#
+# The length is tuned against the car below. Flat out with a clean line the
+# course takes about 5 minutes; lifting off for traffic the way an average
+# driver has to puts it around 6, and somebody who keeps having to slow down
+# and go back for a repair lands near 10 — inside the twelve-minute ceiling,
+# but only just, which is the tension the round is supposed to have.
+RACE_SECTION_METRES = 2700
+RACE_SECTION_COUNT = 7
+RACE_COURSE_METRES = RACE_SECTION_METRES * RACE_SECTION_COUNT   # 18.9 km
 
-# Obstacles on the course, and where each one sits along it (0 = start line,
-# 1 = finish line). The browser positions them from exactly these numbers.
-RACE_OBSTACLE_COUNT = 6
-RACE_OBSTACLE_MARKS = (0.10, 0.24, 0.38, 0.52, 0.66, 0.82)
-
-# The earliest second at which each obstacle can possibly reach the car.
-RACE_OBSTACLE_TIMES = tuple(
-    int(mark * RACE_COURSE_SECONDS) for mark in RACE_OBSTACLE_MARKS
+# Where the repair pickup sits inside its section.
+RACE_REPAIR_MARK = 0.6
+RACE_REPAIR_METRES = tuple(
+    int((index + RACE_REPAIR_MARK) * RACE_SECTION_METRES)
+    for index in range(RACE_SECTION_COUNT)
 )
 
-# Slack allowed on those times, for latency and frame timing. Small enough
-# that it cannot be used to skip the course, large enough to be fair.
-RACE_TIMING_GRACE_SECONDS = 4
+# The car, in metres and seconds. Tuned so a confident driver finishes in
+# roughly four to six minutes, an average one in six to nine, and somebody
+# who keeps hitting things is still inside the twelve-minute ceiling.
+RACE_TOP_SPEED = 62.0          # m/s, about 223 km/h on the dial
+RACE_ACCELERATION = 17.0       # m/s², standstill to top speed in ~4s
+RACE_BRAKING = 36.0            # m/s² on the brake
+RACE_DRAG = 7.0                # m/s² coasting
+RACE_REVERSE_SPEED = 9.0       # m/s, enough to back out of a bad line
+RACE_STEER_RATE = 2.6          # lanes per second at speed
+RACE_CRASH_SPEED_KEPT = 0.5    # fraction of speed surviving a collision
+RACE_CRASH_GRACE_SECONDS = 1.2 # one crash is one penalty, not five
+
+# Distance is checked against what the car could physically have covered.
+# The tolerance absorbs frame timing and a late progress report; it is far
+# too small to drive the course in less than `RACE_MIN_SECONDS`.
+RACE_SPEED_TOLERANCE = 1.08
+RACE_DISTANCE_GRACE_METRES = 120
+
+# The floor this puts under an honest run: ~228 seconds for 14.7 km.
+RACE_MIN_SECONDS = int(RACE_COURSE_METRES / (RACE_TOP_SPEED * RACE_SPEED_TOLERANCE))
+
+# How often the browser reports distance. Every event that matters (a repair)
+# is sent immediately; routine progress rides on this tick.
+RACE_PROGRESS_INTERVAL_SECONDS = 3
 
 # A hostile client can post collisions all day; it only ever costs it points,
 # but the counter still needs a ceiling it cannot overflow.
-RACE_MAX_COLLISIONS = 200
+RACE_MAX_COLLISIONS = 500
+RACE_MAX_COLLISIONS_PER_REPORT = 30
+
+# The course layout is generated from this seed, so every participant at
+# every PC drives exactly the same traffic and the same obstacles.
+RACE_COURSE_SEED = 20260813
 
 # Server-side scoring. Nothing here is ever taken from the browser.
 RACE_MAX_SCORE = 1000
-RACE_BASE_POINTS = 200
+RACE_BASE_POINTS = 150
 RACE_TIME_POINTS = 400
-RACE_OBSTACLE_POINTS = 60
-RACE_COLLISION_PENALTY = 15
-RACE_CLEAN_RUN_BONUS = 40
+RACE_REPAIR_POINTS = 50        # x7 = 350
+RACE_COLLISION_PENALTY = 10
+RACE_CLEAN_RUN_BONUS = 100     # 150 + 400 + 350 + 100 = 1000
 
 
 # ------------------------------------------------------------ challenge ----

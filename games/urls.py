@@ -29,6 +29,9 @@ urlpatterns = [
     path('api/race/progress/', views.api_race_progress, name='api_race_progress'),
     path('api/race/complete/', views.api_race_complete, name='api_race_complete'),
 
+    # NovaCloud as the collected repairs have left it, for the track-side panel.
+    path('api/race/preview/', views.race_preview, name='api_race_preview'),
+
     # The reward: the finished page, unlocked by crossing the finish line.
     path('api/final-preview/', views.final_preview, name='api_final_preview'),
 

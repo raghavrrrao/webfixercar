@@ -10,6 +10,7 @@ honest, and the hint text that documents them for the organisers, still earn
 their place here.
 """
 
+import itertools
 import re
 from io import StringIO
 
@@ -34,6 +35,14 @@ from .game_config import (
 )
 from .models import User
 from .presence import HEARTBEAT_INTERVAL_SECONDS, get_presence_store
+from .repairs import (
+    REPAIR_CARDS,
+    REPAIR_IDS,
+    REPAIRS,
+    clean_repair_ids,
+    is_fully_repaired,
+    repair_css,
+)
 
 
 def graded_solution():
@@ -325,6 +334,96 @@ class HintQualityTests(TestCase):
             text = (' '.join(hints) + ' ' + description).lower()
             for forbidden in ('javascript', 'index.html', '<div', '<span', 'markup'):
                 self.assertNotIn(forbidden, text, f'{objective} mentions {forbidden}')
+
+
+class RepairLayerTests(TestCase):
+    """The seven repairs must be a real partition of the real diff.
+
+    This is the test that stops the repair mechanic from being a mock-up. If
+    the layers ever stop composing into `solution.css` — because somebody
+    edited a stylesheet, or dropped a rule from a slice, or put one rule in two
+    slices — the game would be handing out repairs that do not repair
+    anything, and these fail.
+    """
+
+    def test_the_broken_stylesheet_is_what_a_participant_starts_with(self):
+        self.assertEqual(repair_css([]), STARTER_CSS)
+        self.assertFalse(is_fully_repaired(STARTER_CSS))
+
+    def test_the_full_set_composes_into_the_finished_stylesheet(self):
+        self.assertTrue(is_fully_repaired(repair_css(REPAIR_IDS)))
+
+    def test_the_full_set_passes_every_graded_objective(self):
+        failed = [check['id'] for check in
+                  run_checks(CHALLENGE_HTML, repair_css(REPAIR_IDS))
+                  if not check['passed']]
+        self.assertEqual(failed, [])
+
+    def test_every_collection_state_composes_cleanly(self):
+        """All 128 of them: repairs may be missed and picked up later."""
+        for size in range(len(REPAIR_IDS) + 1):
+            for combination in itertools.combinations(REPAIR_IDS, size):
+                repair_css(combination)      # raises if an anchor has drifted
+
+    def test_the_website_improves_with_every_repair_in_course_order(self):
+        previous = -1
+        for count in range(len(REPAIR_IDS) + 1):
+            css = repair_css(REPAIR_IDS[:count])
+            passed = sum(1 for check in run_checks(CHALLENGE_HTML, css)
+                         if check['passed'])
+            self.assertGreaterEqual(passed, previous, f'{count} repairs went backwards')
+            previous = passed
+        self.assertEqual(previous, TOTAL_CHECKS)
+
+    def test_every_repair_changes_the_stylesheet(self):
+        for index, repair_id in enumerate(REPAIR_IDS):
+            before = repair_css(REPAIR_IDS[:index])
+            after = repair_css(REPAIR_IDS[:index + 1])
+            self.assertNotEqual(before, after, repair_id)
+
+    def test_no_rule_belongs_to_two_repairs(self):
+        anchors = [broken for repair in REPAIRS for broken, _fixed in repair['fixes']]
+        self.assertEqual(len(anchors), len(set(anchors)))
+
+    def test_the_repairs_cover_the_whole_difference(self):
+        """Nothing in the diff is left for nobody to fix."""
+        broken_lines = STARTER_CSS.splitlines()
+        fixed_lines = SOLUTION_CSS.splitlines()
+        composed = repair_css(REPAIR_IDS).splitlines()
+        self.assertEqual(len(broken_lines), len(fixed_lines))
+
+        differing = [n for n, (a, b) in enumerate(zip(broken_lines, fixed_lines)) if a != b]
+        self.assertGreater(len(differing), 30, 'the challenge lost its defects')
+        for line in differing:
+            # the banner comment is documentation, not a repair
+            if line < 6:
+                continue
+            self.assertEqual(composed[line], fixed_lines[line], f'line {line + 1}')
+
+    def test_each_repair_is_described_for_the_participant(self):
+        self.assertEqual(len(REPAIR_CARDS), len(REPAIRS))
+        for card in REPAIR_CARDS:
+            self.assertTrue(card['label'].isupper(), card['label'])
+            self.assertTrue(card['section'].strip())
+            self.assertTrue(card['message'].strip())
+            self.assertLessEqual(len(card['message']), 60, card['id'])
+            self.assertNotIn('{', card['blurb'], 'a card must not leak the answer')
+
+    def test_the_cards_never_carry_the_css(self):
+        """The page is told what it collected, never how the fix is written."""
+        text = ' '.join(
+            str(value) for card in REPAIR_CARDS for value in card.values())
+        for answer in ('repeat(3, 1fr)', 'max-width: 860px', 'display: flex',
+                       'clamp(2.4rem', 'scale(1.04)'):
+            self.assertNotIn(answer, text, answer)
+
+    def test_a_stored_repair_list_is_read_back_safely(self):
+        self.assertEqual(clean_repair_ids(''), [])
+        self.assertEqual(clean_repair_ids(None), [])
+        self.assertEqual(clean_repair_ids('margin,padding'), ['margin', 'padding'])
+        self.assertEqual(clean_repair_ids('margin,margin'), ['margin'])
+        self.assertEqual(clean_repair_ids('margin,nope,<script>'), ['margin'])
+        self.assertEqual(clean_repair_ids(' margin , grid '), ['margin', 'grid'])
 
 
 class PresenceTests(TransactionTestCase):

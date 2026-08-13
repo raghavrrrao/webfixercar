@@ -15,7 +15,8 @@ from django.views.decorators.clickjacking import xframe_options_sameorigin
 from .checks import HINT_LEVELS, OBJECTIVE_TITLES, TOTAL_CHECKS
 from .game_config import RACE_MAX_SCORE
 from .models import CssRule, FinalSubmission, HintReveal, User
-from .views import _render_novacloud, finalize_all_due
+from .repairs import REPAIRS, REPAIRS_BY_ID
+from .views import _render_novacloud, finalize_all_due, race_section
 
 
 def _score_label(score, total):
@@ -40,8 +41,8 @@ class ParticipantAdmin(admin.ModelAdmin):
 
     list_display = (
         'pc_no', 'username', 'status_display', 'score_display', 'race_time_display',
-        'race_obstacles', 'race_collisions', 'race_started_at', 'race_completed_at',
-        'eligible_display', 'submitted_display',
+        'race_obstacles', 'race_collisions', 'distance_display', 'section_display',
+        'race_started_at', 'race_completed_at', 'eligible_display', 'submitted_display',
     )
     list_filter = ('is_admin', 'race_completed_at', 'race_started_at')
     search_fields = ('pc_no', 'username')
@@ -52,7 +53,8 @@ class ParticipantAdmin(admin.ModelAdmin):
         'pc_no', 'username', 'registered_at', 'game_start_time', 'completed_at',
         'best_score', 'race_started_at', 'race_completed_at', 'race_time_seconds',
         'race_time_display', 'race_obstacles', 'race_collisions', 'last_login',
-        'score_display', 'status_display', 'expired_display',
+        'score_display', 'status_display', 'expired_display', 'repairs_display',
+        'distance_display', 'section_display',
         'eligible_display', 'hints_display', 'submitted_display', 'judging_links',
     )
     # `password` is deliberately absent: organisers never need a participant's
@@ -60,7 +62,8 @@ class ParticipantAdmin(admin.ModelAdmin):
     fields = (
         'pc_no', 'username', 'registered_at', 'status_display', 'expired_display',
         'race_started_at', 'race_completed_at', 'race_time_display',
-        'race_obstacles', 'race_collisions', 'score_display',
+        'race_obstacles', 'repairs_display', 'race_collisions',
+        'distance_display', 'section_display', 'score_display',
         'eligible_display', 'submitted_display', 'judging_links',
         'game_start_time', 'completed_at', 'is_admin', 'is_active',
     )
@@ -72,6 +75,28 @@ class ParticipantAdmin(admin.ModelAdmin):
     @admin.display(description='Timed out', boolean=True)
     def expired_display(self, obj):
         return obj.is_expired
+
+    @admin.display(description='CSS repairs')
+    def repairs_display(self, obj):
+        collected = obj.repair_ids
+        if not collected:
+            return '—'
+        return format_html_join(
+            ' ', '<code>{}</code>',
+            ((REPAIRS_BY_ID[repair]['label'],) for repair in collected),
+        )
+
+    @admin.display(description='Distance', ordering='race_distance')
+    def distance_display(self, obj):
+        if not obj.race_distance:
+            return '—'
+        return f'{obj.race_distance / 1000:.1f} km'
+
+    @admin.display(description='Section')
+    def section_display(self, obj):
+        if not obj.race_started_at:
+            return '—'
+        return REPAIRS[race_section(obj.race_distance)]['section']
 
 
     @admin.display(description='Race time', ordering='race_time_seconds')

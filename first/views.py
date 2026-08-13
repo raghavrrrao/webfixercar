@@ -16,19 +16,32 @@ from .game_config import (
     GAME_DURATION_SECONDS,
     MODE,
     CHALLENGE_LABEL,
+    RACE_ACCELERATION,
     RACE_BASE_POINTS,
+    RACE_BRAKING,
     RACE_CLEAN_RUN_BONUS,
     RACE_COLLISION_PENALTY,
-    RACE_COURSE_SECONDS,
+    RACE_COURSE_METRES,
+    RACE_COURSE_SEED,
+    RACE_CRASH_GRACE_SECONDS,
+    RACE_CRASH_SPEED_KEPT,
+    RACE_DISTANCE_GRACE_METRES,
+    RACE_DRAG,
     RACE_MAX_COLLISIONS,
+    RACE_MAX_COLLISIONS_PER_REPORT,
     RACE_MAX_SCORE,
-    RACE_OBSTACLE_COUNT,
-    RACE_OBSTACLE_MARKS,
-    RACE_OBSTACLE_POINTS,
-    RACE_OBSTACLE_TIMES,
+    RACE_MIN_SECONDS,
+    RACE_PROGRESS_INTERVAL_SECONDS,
+    RACE_REPAIR_METRES,
+    RACE_REPAIR_POINTS,
+    RACE_REVERSE_SPEED,
+    RACE_SECTION_COUNT,
+    RACE_SECTION_METRES,
+    RACE_SPEED_TOLERANCE,
     RACE_STATE_SYNC_SECONDS,
+    RACE_STEER_RATE,
     RACE_TIME_POINTS,
-    RACE_TIMING_GRACE_SECONDS,
+    RACE_TOP_SPEED,
     SITE_NAME,
     SITE_TAGLINE,
     SOLUTION_CSS,
@@ -45,6 +58,7 @@ from .models import (
     FinalSubmission,
     User,
 )
+from .repairs import REPAIR_CARDS, REPAIR_COUNT, repair_css, repair_index
 
 # Everything the templates need to name the current round in one place.
 CHALLENGE = {
@@ -55,21 +69,36 @@ CHALLENGE = {
     'mode': MODE,
     'minutes': GAME_DURATION_SECONDS // 60,
     'objectives': TOTAL_CHECKS,
-    'obstacles': RACE_OBSTACLE_COUNT,
+    'repairs': REPAIR_COUNT,
+    'kilometres': round(RACE_COURSE_METRES / 1000, 1),
 }
 
-# The course description the browser draws from. It is sent to the page rather
-# than hardcoded in the script so the client and the server can never disagree
-# about where an obstacle is or how long the course takes.
+# The course the browser draws, and the physics it drives with. Sent to the
+# page rather than hardcoded in the script so the two can never disagree about
+# where a repair sits or how fast the car can possibly be going — the server
+# validates against these same numbers.
 RACE_CONFIG = {
     'duration': GAME_DURATION_SECONDS,
-    'course': RACE_COURSE_SECONDS,
-    'obstacleCount': RACE_OBSTACLE_COUNT,
-    'obstacleMarks': list(RACE_OBSTACLE_MARKS),
-    'obstacleTimes': list(RACE_OBSTACLE_TIMES),
+    'course': RACE_COURSE_METRES,
+    'sectionMetres': RACE_SECTION_METRES,
+    'sectionCount': RACE_SECTION_COUNT,
+    'repairMetres': list(RACE_REPAIR_METRES),
+    'repairs': list(REPAIR_CARDS),
+    'seed': RACE_COURSE_SEED,
+    'car': {
+        'topSpeed': RACE_TOP_SPEED,
+        'acceleration': RACE_ACCELERATION,
+        'braking': RACE_BRAKING,
+        'drag': RACE_DRAG,
+        'reverseSpeed': RACE_REVERSE_SPEED,
+        'steerRate': RACE_STEER_RATE,
+        'crashSpeedKept': RACE_CRASH_SPEED_KEPT,
+        'crashGrace': RACE_CRASH_GRACE_SECONDS,
+    },
     'warnSeconds': TIMER_WARNING_SECONDS,
     'dangerSeconds': TIMER_DANGER_SECONDS,
     'syncSeconds': RACE_STATE_SYNC_SECONDS,
+    'progressSeconds': RACE_PROGRESS_INTERVAL_SECONDS,
 }
 
 
@@ -178,25 +207,45 @@ def finalize_all_due():
 
 # ------------------------------------------------------------ race state ----
 
+def race_section(distance):
+    """Which of the seven CSS sections `distance` metres falls in."""
+    if distance <= 0:
+        return 0
+    return max(0, min(RACE_SECTION_COUNT - 1, int(distance // RACE_SECTION_METRES)))
+
+
 def _race_state(user):
     """The one shape every race endpoint answers with.
 
-    Every number in it is read from the database or the server clock. The
-    browser renders this; it never contributes to it.
+    Every number in it is read from the database or the server clock, and it
+    is the only race state there is: the browser renders this and reports
+    against it, but never contributes to it. It is also deliberately the
+    shape a live scoreboard would want to broadcast.
     """
+    elapsed = user.elapsed_seconds if user.race_started_at else 0
+    repairs = user.repair_ids
+    completed = bool(user.race_completed_at)
     return {
         'status': user.race_status,
         'started': bool(user.race_started_at),
         'remaining': user.remaining_seconds,
-        'elapsed': user.elapsed_seconds if user.race_started_at else 0,
+        'elapsed': elapsed,
         'duration': GAME_DURATION_SECONDS,
-        'course': RACE_COURSE_SECONDS,
         'expired': user.is_expired,
-        'completed': bool(user.race_completed_at),
-        'obstacles': user.race_obstacles,
-        'obstacleCount': RACE_OBSTACLE_COUNT,
+        'completed': completed,
+        'repairs': repairs,
+        'repairCount': REPAIR_COUNT,
+        'repairsCollected': len(repairs),
+        'distance': user.race_distance,
+        'course': RACE_COURSE_METRES,
+        'section': race_section(user.race_distance),
         'collisions': user.race_collisions,
-        'score': user.best_score if user.race_completed_at else 0,
+        # While the race runs this is the score as it stands *right now*, so
+        # the HUD never has to do arithmetic of its own. A race that has not
+        # started has not scored anything.
+        'score': (user.best_score if completed
+                  else (race_score(elapsed, len(repairs), user.race_collisions)
+                        if user.race_started_at else 0)),
     }
 
 
@@ -206,26 +255,33 @@ def _settle_expired(user):
         finalize_if_due(user)
 
 
-def race_score(elapsed, obstacles, collisions):
+def race_score(elapsed, repairs, collisions):
     """The official score. Server-side, deterministic, and the only one.
 
-    Finishing sooner scores more, every obstacle scores, every collision
-    costs, and a clean run earns the last few points. Completing the course
-    perfectly at the earliest possible moment is exactly RACE_MAX_SCORE.
+    Driving the course quickly scores most, every CSS repair scores, every
+    collision costs, and a crash-free run with the whole website rebuilt earns
+    the last hundred points. The theoretical perfect run — every repair, no
+    collisions, the fastest the car can physically go — is exactly
+    RACE_MAX_SCORE.
     """
-    span = max(1, GAME_DURATION_SECONDS - RACE_COURSE_SECONDS)
+    span = max(1, GAME_DURATION_SECONDS - RACE_MIN_SECONDS)
     time_points = int(RACE_TIME_POINTS * (GAME_DURATION_SECONDS - elapsed) / span)
     time_points = max(0, min(RACE_TIME_POINTS, time_points))
 
     score = (
         RACE_BASE_POINTS
         + time_points
-        + obstacles * RACE_OBSTACLE_POINTS
+        + min(repairs, REPAIR_COUNT) * RACE_REPAIR_POINTS
         - collisions * RACE_COLLISION_PENALTY
     )
-    if collisions == 0 and obstacles >= RACE_OBSTACLE_COUNT:
+    if collisions == 0 and repairs >= REPAIR_COUNT:
         score += RACE_CLEAN_RUN_BONUS
     return max(0, min(RACE_MAX_SCORE, score))
+
+
+def _reachable_metres(elapsed):
+    """The furthest the car could honestly have got in `elapsed` seconds."""
+    return elapsed * RACE_TOP_SPEED * RACE_SPEED_TOLERANCE + RACE_DISTANCE_GRACE_METRES
 
 
 # ---------------------------------------------------------------- pages ----
@@ -266,11 +322,13 @@ def home(request):
         'race_over': user.race_status == RACE_EXPIRED,
         'race_active': user.race_status == RACE_ACTIVE,
         'broken_url': reverse('api_broken_preview'),
+        'repairs': REPAIR_CARDS,
         'race_urls': {
             'start': reverse('api_race_start'),
             'state': reverse('api_race_state'),
             'progress': reverse('api_race_progress'),
             'complete': reverse('api_race_complete'),
+            'preview': reverse('api_race_preview'),
             'result': reverse('race_result'),
             'home': reverse('home'),
             'exit': reverse('logout'),
@@ -285,15 +343,20 @@ def race_result(request):
     user = request.user
     if not user.race_completed_at:
         return redirect('home')
+    collected = user.repair_ids
     return render(request, 'race_result.html', {
         'challenge': CHALLENGE,
         'user': user,
         'score': user.best_score,
         'max_score': RACE_MAX_SCORE,
         'time_seconds': user.race_time_seconds,
-        'obstacles': user.race_obstacles,
-        'obstacle_count': RACE_OBSTACLE_COUNT,
+        'repairs': [
+            {**card, 'done': card['id'] in collected} for card in REPAIR_CARDS
+        ],
+        'repairs_collected': len(collected),
+        'repair_count': REPAIR_COUNT,
         'collisions': user.race_collisions,
+        'kilometres': round(user.race_distance / 1000, 1),
         'fixed_url': reverse('api_final_preview'),
     })
 
@@ -375,74 +438,122 @@ def api_race_state(request):
     return JsonResponse(_race_state(request.user))
 
 
+def _live_race(request):
+    """Return (user, None) for a running race, or (user, response) to refuse.
+
+    Every write endpoint starts here, so "is this attempt allowed to change?"
+    is answered in exactly one place.
+    """
+    user = request.user
+    status = user.race_status
+    if status == RACE_NOT_STARTED:
+        return user, JsonResponse(
+            {**_race_state(user), 'error': 'Race has not started.'}, status=400)
+    if status == RACE_COMPLETED:
+        return user, JsonResponse(
+            {**_race_state(user), 'error': 'This attempt is already finished.',
+             'redirect': reverse('race_result')}, status=409)
+    if status == RACE_EXPIRED:
+        _settle_expired(user)
+        return user, JsonResponse(
+            {**_race_state(user),
+             'error': "Time is up. Your race attempt has ended."}, status=409)
+    return user, None
+
+
 @require_POST
 def api_race_progress(request):
-    """Record one obstacle cleared, or one collision, while the race runs.
+    """Report where the car has got to, what it hit, and what it picked up.
 
-    This is what keeps the finish honest. An obstacle is only accepted when
+    This is what keeps the finish honest. Distance is the spine of it: the
+    server accepts a new distance only if the car could physically have
+    covered it in the time the server has been counting, and it never goes
+    backwards. A repair is then accepted only when
 
       * the race is genuinely active,
-      * it is the next obstacle in course order, and
-      * the course has actually had time to carry it to the car.
+      * it is the next repair in course order, and
+      * the car has actually reached the point where that repair sits.
 
-    So the six clears the completion endpoint insists on cannot be conjured
-    up: they take at least as long as driving the course does.
+    So the seven repairs the completion endpoint insists on cannot be
+    conjured up: collecting them takes as long as driving to them does.
     """
     if not request.user.is_authenticated:
         return JsonResponse({'error': 'Not logged in'}, status=403)
 
-    user = request.user
-    status = user.race_status
-    if status == RACE_NOT_STARTED:
-        return JsonResponse(
-            {**_race_state(user), 'error': 'Race has not started.'}, status=400)
-    if status == RACE_COMPLETED:
-        return JsonResponse(
-            {**_race_state(user), 'error': 'This attempt is already finished.'},
-            status=409)
-    if status == RACE_EXPIRED:
-        _settle_expired(user)
-        return JsonResponse(
-            {**_race_state(user), 'error': "Time is up."}, status=409)
+    user, refusal = _live_race(request)
+    if refusal is not None:
+        return refusal
 
     elapsed = user.elapsed_seconds
+    reachable = _reachable_metres(elapsed)
     fields = []
 
-    raw_obstacle = request.POST.get('obstacle')
-    if raw_obstacle not in (None, ''):
+    raw_distance = (request.POST.get('distance') or '').strip()
+    if raw_distance:
         try:
-            index = int(raw_obstacle)
+            # float() first so "1200.5" is read, int() so infinities are not.
+            distance = int(float(raw_distance))
+        except (TypeError, ValueError, OverflowError):
+            return JsonResponse(
+                {**_race_state(user), 'error': 'Invalid distance.'}, status=400)
+        if distance < 0:
+            return JsonResponse(
+                {**_race_state(user), 'error': 'Invalid distance.'}, status=400)
+        # Clamp rather than refuse: a client that overstates its position gets
+        # held at what was actually possible, and simply makes no progress.
+        distance = int(min(distance, reachable))
+        if distance > user.race_distance:
+            user.race_distance = distance
+            fields.append('race_distance')
+
+    raw_collisions = (request.POST.get('collisions') or '').strip()
+    if raw_collisions:
+        try:
+            hits = int(raw_collisions)
         except (TypeError, ValueError):
             return JsonResponse(
-                {**_race_state(user), 'error': 'Invalid obstacle.'}, status=400)
-
-        if not 1 <= index <= RACE_OBSTACLE_COUNT:
-            return JsonResponse(
-                {**_race_state(user), 'error': 'Invalid obstacle.'}, status=400)
-        if index <= user.race_obstacles:
-            # A replayed report. Already counted; say so without counting twice.
-            return JsonResponse({**_race_state(user), 'counted': False})
-        if index != user.race_obstacles + 1:
-            return JsonResponse(
-                {**_race_state(user), 'error': 'Obstacles must be cleared in order.'},
-                status=400)
-        if elapsed + RACE_TIMING_GRACE_SECONDS < RACE_OBSTACLE_TIMES[index - 1]:
-            return JsonResponse(
-                {**_race_state(user), 'error': 'That obstacle is still ahead of you.'},
-                status=400)
-
-        user.race_obstacles = index
-        fields.append('race_obstacles')
-
-    collision = (request.POST.get('collision') or '').strip().lower()
-    if collision not in ('', '0', 'false', 'no'):
-        if user.race_collisions < RACE_MAX_COLLISIONS:
-            user.race_collisions += 1
+                {**_race_state(user), 'error': 'Invalid collisions.'}, status=400)
+        hits = max(0, min(RACE_MAX_COLLISIONS_PER_REPORT, hits))
+        if hits:
+            user.race_collisions = min(RACE_MAX_COLLISIONS, user.race_collisions + hits)
             fields.append('race_collisions')
 
     if fields:
         user.save(update_fields=fields)
+
+    repair_id = (request.POST.get('repair') or '').strip()
+    if repair_id:
+        return _record_repair(user, repair_id)
+
     return JsonResponse({**_race_state(user), 'counted': bool(fields)})
+
+
+def _record_repair(user, repair_id):
+    """Accept one CSS repair, if the car has genuinely earned it."""
+    index = repair_index(repair_id)
+    if index is None:
+        return JsonResponse(
+            {**_race_state(user), 'error': 'No such repair.'}, status=400)
+
+    collected = user.repair_ids
+    if repair_id in collected:
+        # A replayed report. Already recorded; say so without recording twice.
+        return JsonResponse({**_race_state(user), 'counted': False})
+    if index != len(collected):
+        return JsonResponse(
+            {**_race_state(user),
+             'error': 'Repairs must be collected in course order.'}, status=400)
+    if user.race_distance < RACE_REPAIR_METRES[index]:
+        return JsonResponse(
+            {**_race_state(user),
+             'error': 'That repair is still further up the course.'}, status=400)
+
+    user.record_repair(repair_id)
+    return JsonResponse({
+        **_race_state(user),
+        'counted': True,
+        'repair': REPAIR_CARDS[index],
+    })
 
 
 @require_POST
@@ -451,43 +562,31 @@ def api_race_complete(request):
 
     Nothing the browser sends is scored. The completion is accepted only when
     the server's own record says the attempt is active, the whole course has
-    gone past, and every obstacle was cleared along the way — and it can only
-    ever be accepted once.
+    been driven, and NovaCloud is fully repaired — and it can only ever be
+    accepted once.
     """
     if not request.user.is_authenticated:
         return JsonResponse({'error': 'Not logged in'}, status=403)
 
-    user = request.user
-    status = user.race_status
+    user, refusal = _live_race(request)
+    if refusal is not None:
+        return refusal
 
-    if status == RACE_COMPLETED:
-        # Idempotent: a retried request lands on the existing result, and
-        # cannot overwrite the recorded performance.
-        return JsonResponse(
-            {**_race_state(user), 'redirect': reverse('race_result')}, status=409)
-    if status == RACE_NOT_STARTED:
-        return JsonResponse(
-            {**_race_state(user), 'error': 'Race has not started.'}, status=400)
-    if status == RACE_EXPIRED:
-        _settle_expired(user)
-        return JsonResponse(
-            {**_race_state(user), 'error': "Time is up. Your race attempt has ended."},
-            status=409)
-
-    elapsed = user.elapsed_seconds
-    if user.race_obstacles < RACE_OBSTACLE_COUNT:
+    repairs = user.repair_ids
+    if len(repairs) < REPAIR_COUNT:
+        missing = REPAIR_COUNT - len(repairs)
         return JsonResponse(
             {**_race_state(user),
-             'error': 'You have not cleared every obstacle yet.'}, status=400)
-    if elapsed + RACE_TIMING_GRACE_SECONDS < RACE_COURSE_SECONDS:
+             'error': f'NovaCloud still needs {missing} more CSS '
+                      f'repair{"s" if missing > 1 else ""}.'}, status=400)
+    if user.race_distance < RACE_COURSE_METRES:
         return JsonResponse(
             {**_race_state(user),
              'error': 'You have not reached the finish line yet.'}, status=400)
 
-    obstacles = min(RACE_OBSTACLE_COUNT, user.race_obstacles)
+    elapsed = max(1, min(GAME_DURATION_SECONDS, user.elapsed_seconds))
     collisions = min(RACE_MAX_COLLISIONS, user.race_collisions)
-    elapsed = max(1, min(GAME_DURATION_SECONDS, elapsed))
-    score = race_score(elapsed, obstacles, collisions)
+    score = race_score(elapsed, len(repairs), collisions)
 
     now = timezone.now()
     updated = User.objects.filter(
@@ -515,7 +614,7 @@ def api_race_complete(request):
             'final_css': SOLUTION_CSS,
             'score': score,
             'total': RACE_MAX_SCORE,
-            'reached_all': obstacles == RACE_OBSTACLE_COUNT,
+            'reached_all': True,
             'design_mode': True,
             'eligible': True,
             'hints_used': 0,
@@ -523,6 +622,22 @@ def api_race_complete(request):
         },
     )
     return JsonResponse({**_race_state(user), 'redirect': reverse('race_result')})
+
+
+@xframe_options_sameorigin
+def race_preview(request):
+    """NovaCloud as it stands right now, for the panel beside the track.
+
+    The stylesheet is composed here, from the repairs the *server* has
+    recorded — so the preview cannot show a repair that was not earned, and a
+    participant whose time ran out is looking at the broken site again.
+    """
+    if not request.user.is_authenticated:
+        return redirect('login')
+
+    user = request.user
+    collected = user.repair_ids if user.race_status == RACE_ACTIVE else []
+    return _render_novacloud(repair_css(collected))
 
 
 # --------------------------------------------------------- the reward ----

@@ -10,22 +10,37 @@
   <main class="wf-result">
     <div class="wf-result-burst">✓</div>
     <p class="wf-kicker">CHALLENGE COMPLETE</p>
-    <h1>YOU <span>FIXED IT.</span></h1>
-    <p class="wf-result-lead">Well driven, {{ user.username }}. You cleared the CSS course, crossed the finish line and brought NovaCloud back to life.</p>
+    <h1>CSS FIX <span>COMPLETE!</span></h1>
+    <p class="wf-result-lead">
+      Well driven, {{ user.username }}. You collected all {{ repair_count }} CSS repair
+      components across {{ kilometres }} km and brought {{ challenge.site }} back to life.
+    </p>
+
     <section class="wf-result-stats">
-      <div><small>SCORE</small><strong>{{ score }}</strong><em>/ {{ max_score }}</em></div>
       <div><small>TIME</small><strong id="wf-result-time">--:--</strong></div>
-      <div><small>OBSTACLES</small><strong>{{ obstacles }}</strong><em>/ {{ obstacle_count }}</em></div>
-      <div><small>HITS</small><strong>{{ collisions }}</strong></div>
+      <div><small>REPAIRS</small><strong>{{ repairs_collected }}</strong><em>/ {{ repair_count }}</em></div>
+      <div><small>PENALTIES</small><strong>{{ collisions }}</strong></div>
+      <div><small>SCORE</small><strong>{{ score }}</strong><em>/ {{ max_score }}</em></div>
     </section>
+
+    <section class="wf-result-repairs" aria-label="CSS repairs collected">
+      {% for repair in repairs %}
+        <div class="{% if repair.done %}is-done{% endif %}">
+          <b>{{ repair.label }}</b><span>{{ repair.message }}</span>
+        </div>
+      {% endfor %}
+    </section>
+
     <div class="wf-result-actions">
       <a class="wf-btn wf-btn--race" href="{{ fixed_url }}" target="_blank" rel="noopener">OPEN FIXED WEBSITE ↗</a>
       <a class="wf-btn wf-btn--ghost" href="{% url 'logout' %}">EXIT</a>
     </div>
+
     <section class="wf-fixed-reward">
-      <div class="wf-fixed-label">THE WEBSITE YOU JUST FIXED</div>
+      <div class="wf-fixed-label">THE WEBSITE YOU JUST REBUILT</div>
       <iframe src="{{ fixed_url }}" title="Fixed NovaCloud website" sandbox></iframe>
     </section>
+
     <p class="wf-result-note">Your performance has been recorded. This is not a placing — the event has one overall winner, and the organizers decide it by comparing every completed run.</p>
   </main>
 <script>

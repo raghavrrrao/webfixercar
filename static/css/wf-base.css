@@ -51,6 +51,16 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* `hidden` must actually hide.
+ *
+ * The browser hides [hidden] from its own user-agent stylesheet, and *any*
+ * author `display` beats a user-agent rule whatever the specificity. So a
+ * panel that is `display: flex` in here stays on screen with `hidden` set,
+ * which is how the race screen and its TIME'S UP overlay once appeared over
+ * the briefing before a race had even started. This one line is what keeps
+ * the attribute meaning what the JavaScript thinks it means. */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; }
 
 body.wf-body {

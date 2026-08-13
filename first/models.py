@@ -59,8 +59,23 @@ class User(AbstractBaseUser):
     race_started_at = models.DateTimeField(null=True, blank=True)
     race_completed_at = models.DateTimeField(null=True, blank=True)
     race_time_seconds = models.PositiveSmallIntegerField(default=0)
-    race_obstacles = models.PositiveSmallIntegerField(default=0)
     race_collisions = models.PositiveSmallIntegerField(default=0)
+
+    # The CSS repairs collected, in the order they were collected, as a
+    # comma-separated list of repair ids. This is the authoritative record of
+    # how much of NovaCloud the participant has put back together: the live
+    # preview is composed from it, and so is the score.
+    race_repairs = models.TextField(blank=True, default="")
+
+    # Furthest point on the course the server has accepted, in metres. Every
+    # repair and the finish line are checked against it.
+    race_distance = models.PositiveIntegerField(default=0)
+
+    # Kept in step with `race_repairs` by `record_repair()` so the admin can
+    # sort and filter on it in the database. `race_repairs` is the source of
+    # truth; this is a count derived from it, never written anywhere else.
+    race_obstacles = models.PositiveSmallIntegerField(
+        default=0, verbose_name="repairs collected")
 
     objects = UserManager()
 
@@ -148,6 +163,34 @@ class User(AbstractBaseUser):
         if self.race_completed_at:
             return False
         return self._round_started_at is not None and self.remaining_seconds <= 0
+
+    # -- the repairs -------------------------------------------------------
+
+    @property
+    def repair_ids(self):
+        """The repairs collected so far, in course order."""
+        from .repairs import clean_repair_ids
+        return clean_repair_ids(self.race_repairs)
+
+    @property
+    def repairs_collected(self):
+        return len(self.repair_ids)
+
+    def record_repair(self, repair_id):
+        """Append one repair to the participant's record.
+
+        The only writer of `race_repairs`, so the stored list is always in
+        course order and never holds a duplicate. Returns False if this repair
+        was already collected, leaving the record untouched.
+        """
+        collected = self.repair_ids
+        if repair_id in collected:
+            return False
+        collected.append(repair_id)
+        self.race_repairs = ','.join(collected)
+        self.race_obstacles = len(collected)
+        self.save(update_fields=['race_repairs', 'race_obstacles'])
+        return True
 
     @property
     def race_status(self):

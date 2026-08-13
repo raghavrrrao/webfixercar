@@ -1,14 +1,20 @@
 # Website Fixer
 
-A timed **CSS debugging** game. There is one challenge — **CSS Challenge ·
-NovaCloud** — which hands the player a finished
-cloud-platform landing page ("NovaCloud") whose stylesheet shipped broken, and
-gives them **30 minutes** to clear **14 CSS objectives**.
+A timed **CSS repair race**. There is one challenge — **CSS Challenge ·
+NovaCloud** — which hands the participant a finished cloud-platform landing
+page ("NovaCloud") whose stylesheet shipped broken, and **12 minutes** to put
+it back together.
 
-Nobody builds NovaCloud, and nobody edits its markup. `index.html` is
-**read-only** — shown so the player can read the structure and work out which
-selectors apply, never editable, and never accepted from the browser. The only
-editable file is `style.css`.
+Nobody builds NovaCloud, nobody edits its markup, and — since Phase 2 — nobody
+writes CSS either. **The race is the repair.** The seven CSS components that
+fix the site are scattered along an 18.9 km course; drive, dodge the traffic,
+collect them, and each one applies a real slice of the real fix while the live
+preview beside the track rebuilds itself.
+
+Some of the sections below still describe the earlier CSS-editor round, whose
+grading code, hint text and challenge files the race is built on top of and
+still uses. "Website Fixer — current game flow" further down is the current
+game.
 
 Django 5 + Django Channels (ASGI). No frontend framework.
 
@@ -326,17 +332,77 @@ editor must not change at all.
 
 ## Website Fixer — current game flow
 
-The competition now uses the existing Django project with a lightweight CSS-themed racing challenge:
+The participant never writes CSS. **The race is the repair.**
 
 1. Existing intro/auth flow remains in place.
 2. The player sees the intentionally broken NovaCloud page.
-3. Pressing **START RACE** starts a server-authoritative 12-minute timer.
-4. The player drives through six CSS-themed obstacles.
-5. Reaching the finish records time, obstacles, collisions and a score.
-6. The result page shows congratulations and the official fixed NovaCloud website.
-7. One overall winner is selected by the organizers from the recorded results.
+3. **START RACE** → a 3-2-1 countdown, then a server-authoritative 12-minute clock.
+4. They drive an 18.9 km course of seven CSS-themed sections, dodging traffic
+   and hazards.
+5. Each section holds one **CSS repair component**. Collecting it applies a real
+   slice of the fix, and the live preview beside the track rebuilds itself.
+6. All seven collected + the finish line crossed → time, repairs, penalties and
+   a score are recorded.
+7. The result page shows the performance and hands over the finished NovaCloud site.
+8. One overall winner is selected by the organizers from the recorded results.
 
-The old CSS editor files and grading code are retained for compatibility with existing project data, but the active player flow is the racing challenge.
+Run out of time and the attempt ends: the site stays broken and the reward stays locked.
+
+The old CSS editor files and grading code are retained for compatibility with
+existing project data, but the active player flow is the race.
+
+### The repair layers — how a pickup fixes a real website
+
+`first/repairs.py` is the bridge, and it holds no invented CSS. `style.css` and
+`solution.css` differ by 37 rules; each of the seven repairs owns a slice of
+that diff — the rules belonging to its CSS concept — and the seven slices are a
+**partition**: every differing rule is in exactly one slice, and no rule is in
+two.
+
+```
+index.html  +  style.css                       ← what the participant is shown
+            +  RESPONSIVE  (1 rule)            ← @media fired the wrong way
+            +  DISPLAY    (10 rules)           ← display:block, wrong sizes
+            +  MARGIN      (5 rules)           ← gaps far too big or missing
+            +  PADDING     (2 rules)           ← cards with no room inside
+            +  FLEXBOX     (6 rules)           ← justify-content, flex gaps
+            +  POSITION    (6 rules)           ← transforms and offsets adrift
+            +  GRID        (7 rules)           ← every grid at the wrong columns
+            =  solution.css                    ← byte for byte
+```
+
+`repair_css(collected)` composes the current stylesheet with the same
+`apply_fixes()` the challenge has always used, and `GET /api/race/preview/`
+renders it. `RepairLayerTests` proves the properties that make this real rather
+than decorative: all 128 possible collection states compose cleanly, the full
+set equals `solution.css`, the graded objective count rises monotonically
+0 → 1 → 4 → 6 → 7 → 8 → 10 → 14 as the repairs come in, and every repair
+changes the stylesheet.
+
+RESPONSIVE is deliberately first on the course: while `@media (min-width: 860px)`
+is inverted, a desktop browser is wearing the phone stylesheet — the nav menu is
+hidden and the hero is flattened — which would mask several of the later repairs.
+
+### The course and the car
+
+`first/game_config.py` holds both, and the browser is *sent* them so client and
+server cannot disagree about where a repair sits or how fast the car can go.
+
+| | |
+| --- | --- |
+| Course | 18,900 m — 7 sections × 2,700 m |
+| Repairs | one per section, 60% of the way through |
+| Top speed | 62 m/s (~223 km/h), 17 m/s² accelerating, 36 m/s² braking |
+| Fastest possible run | ~4:42, the floor the distance check puts under the course |
+| Design targets | good 4-6 min · average 6-9 · struggling 9-12 · ceiling 12:00 |
+
+The course layout is generated in the browser from `RACE_COURSE_SEED`, so every
+PC in the room drives an identical course — the traffic and hazards are part of
+the competition, not luck.
+
+Controls are `W`/`↑` accelerate, `S`/`↓` brake, `A`/`D` or `←`/`→` steer.
+The track is a single `<canvas>`; the HUD is DOM but each value is only written
+when it changes, so a frame costs no layout.
 
 ### What the server decides, and what it cannot
 
@@ -345,33 +411,79 @@ The browser is never believed. The server owns:
 * **the clock** — `race_started_at` is written once, by `POST /api/race/start/`;
 * **the state machine** — `NOT_STARTED → ACTIVE → COMPLETED | EXPIRED`, with
   both end states terminal (`User.race_status`);
-* **obstacle progress** — `POST /api/race/progress/` accepts an obstacle only
-  when it is the *next* one in course order and the course has had time to
-  carry it to the car (`RACE_OBSTACLE_TIMES`, plus a few seconds of grace), so
-  six clears cannot be produced faster than the course can be driven;
+* **distance** — `POST /api/race/progress/` accepts a new position only if the
+  car could physically have covered it in the time the server has been
+  counting (`elapsed × RACE_TOP_SPEED × 1.08 + 120 m`), and never lets it go
+  backwards. An overstated position is *clamped*, not rejected, so a client
+  that lies simply stops making progress;
+* **the repairs** — a repair is recorded only when it is the next one in
+  course order and `race_distance` has actually reached it, so the seven
+  cannot be produced faster than the course can be driven. `User.race_repairs`
+  is the single authoritative list; the live preview is composed from it;
 * **the finish line** — `POST /api/race/complete/` requires an active race,
-  every obstacle already recorded, and at least `RACE_COURSE_SECONDS` elapsed;
-* **the score** — `views.race_score()`, computed from the server's own
-  recorded elapsed time, obstacle count and collision count. Nothing posted by
-  the browser (`score`, `obstacles`, `collisions`, `elapsed`) is ever read.
+  all seven repairs recorded, and `race_distance ≥ RACE_COURSE_METRES`;
+* **the score** — `views.race_score()`, computed from the server's own elapsed
+  time, repair count and collision count. Nothing posted by the browser
+  (`score`, `repairs`, `collisions`, `elapsed`, `distance` beyond the clamp)
+  is ever read as fact. The HUD's live score is the server's number too.
+
+Together the distance rule puts a hard floor under an honest run: 18,900 m at
+62 m/s cannot happen in under ~4 minutes 42, whatever the browser claims.
 
 Known limits, stated plainly. This is a browser game, so it is not
 cheat-proof, and the goal is only that trivial devtools or curl manipulation
 cannot produce a winning result:
 
 * **Collisions are self-reported.** The server counts what the browser tells
-  it and never lets the number go down, but a patched client can simply not
-  report a hit. Collisions only ever *subtract* points, so the worst case is a
-  participant claiming a cleaner run than they drove.
-* **Obstacle clears are time-gated, not skill-verified.** The server proves
-  the participant was present and that the course had time to reach each
-  obstacle; it does not simulate the car, so it cannot prove they steered
-  around it rather than through it.
-* **The earliest possible finish is fixed.** Because the course scrolls at a
-  fixed pace, every completed run takes about `RACE_COURSE_SECONDS`; the time
-  component of the score separates a prompt finish from a stalled one, not one
-  driver's line from another's.
+  it, never lets the number go down, and caps a single report at 30, but a
+  patched client can simply not report a hit. Collisions only ever *subtract*
+  points, so the worst case is a participant claiming a cleaner run than they
+  drove.
+* **Driving is not simulated server-side.** The server proves the car took the
+  time to get where it says it is; it does not re-run the physics, so it
+  cannot prove the player steered around a hazard rather than through it. A
+  patched client could drive a perfect line — but not a faster one, because
+  top speed is what the distance check is measured against.
+* **The course layout is in the client.** It is seeded and identical for
+  everybody, but a determined participant could read the traffic pattern out
+  of the JavaScript. That buys foreknowledge, not speed.
 
 Organisers compare the recorded runs in the Django admin and pick the one
 overall winner. Nothing in the application claims a winner or ranks anybody.
+
+### Ready for a live scoreboard, not yet wired to one
+
+Race state lives in one place — `views._race_state(user)`, read straight off
+the participant row — and every endpoint answers with exactly that shape:
+status, elapsed, remaining, distance, section, repairs, collisions and score.
+The presence WebSocket (`first/consumers.py`, `first/presence.py`) already runs
+alongside it.
+
+So the scoreboard phase is a broadcast layer over an existing single source of
+truth: the points where a race changes state are `api_race_start`,
+`_record_repair`, `api_race_progress`, `api_race_complete` and `_settle_expired`,
+which correspond one-to-one with the `race_started` / `repair_collected` /
+`race_progress` / `collision` / `score_updated` / `race_completed` /
+`race_expired` events a dashboard would consume. Nothing needs to be
+recalculated for them, and nothing else should become a second source of truth.
  
+
+### Clearing a race attempt (organisers and developers only)
+
+One participant gets one official attempt, and nothing reachable from a browser
+will ever hand out a second one. When a *real* rerun is needed — a PC died
+mid-race, or a developer wants to play the game again — it is a shell command
+on the server, so it takes access to the machine the event runs on:
+
+```bash
+python manage.py reset_race PC-12 --yes    # clear that participant's attempt
+python manage.py reset_race PC-TEST --new  # create a fresh test participant
+```
+
+Without `--yes` it prints the attempt it is about to destroy and refuses. There
+is deliberately no participant-facing reset, and no automatic one.
+
+Note for manual testing: because an unfinished attempt expires twelve minutes
+after it starts, an account used for an earlier test will correctly show the
+"attempt has ended" briefing forever after. That is the one-attempt rule
+working, not a bug — use `--new` to get a clean participant.
