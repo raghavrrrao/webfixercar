@@ -22,11 +22,29 @@
       <p class="wf-lead">The HTML is ready. The styling isn't. Your job is to drive through the CSS course, clear every obstacle and reach the finish line before the clock hits zero.</p>
       <div class="wf-rule-list">
         <div><b>01</b><span>Drive through the CSS obstacle course</span></div>
-        <div><b>02</b><span>Clear all 6 obstacles</span></div>
-        <div><b>03</b><span>Finish within 12:00</span></div>
+        <div><b>02</b><span>Clear all {{ challenge.obstacles }} obstacles</span></div>
+        <div><b>03</b><span>Cross the finish line within {{ challenge.minutes }}:00</span></div>
       </div>
-      <button class="wf-btn wf-btn--race" id="wf-start-race">START RACE <span>→</span></button>
-      <p class="wf-start-note">The 12-minute clock starts only when you press START RACE.</p>
+
+      {% if race_over %}
+        <div class="wf-ended" id="wf-ended">
+          <p class="wf-ended__title">TIME'S UP!</p>
+          <p class="wf-ended__text">Your race attempt has ended. You get one official attempt, so this one is final — your performance has been recorded for the organizers.</p>
+          <a class="wf-btn wf-btn--ghost" href="{% url 'logout' %}">EXIT</a>
+        </div>
+      {% else %}
+        <button class="wf-btn wf-btn--race" id="wf-start-race">
+          {% if race_active %}RESUME RACE{% else %}START RACE{% endif %} <span>→</span>
+        </button>
+        <p class="wf-start-note">
+          {% if race_active %}
+            Your attempt is already running — the clock does not restart.
+          {% else %}
+            The {{ challenge.minutes }}-minute clock starts only when you press START RACE. You get one official attempt.
+          {% endif %}
+        </p>
+      {% endif %}
+      <p class="wf-race-error" id="wf-brief-error" hidden role="alert"></p>
     </section>
 
     <section class="wf-broken-card" aria-label="Broken NovaCloud preview">
@@ -41,7 +59,7 @@
   <header class="wf-race-hud">
     <div class="wf-hud-brand">WEBSITE <strong>FIXER</strong></div>
     <div class="wf-hud-track"><span id="wf-race-progress"></span></div>
-    <div class="wf-hud-stat"><small>OBSTACLES</small><b id="wf-obstacles">0/6</b></div>
+    <div class="wf-hud-stat"><small>OBSTACLES</small><b id="wf-obstacles">0/{{ challenge.obstacles }}</b></div>
     <div class="wf-hud-stat"><small>HITS</small><b id="wf-collisions">0</b></div>
     <div class="wf-race-timer" id="wf-race-timer">12:00</div>
   </header>
@@ -65,10 +83,17 @@
     </div>
     <div class="wf-controls"><span>← / A</span><b>STEER</b><span>D / →</span></div>
     <div class="wf-race-message" id="wf-race-message">GET READY</div>
+    <div class="wf-race-over" id="wf-race-over" hidden role="alertdialog" aria-labelledby="wf-race-over-title">
+      <p class="wf-ended__title" id="wf-race-over-title">TIME'S UP!</p>
+      <p class="wf-ended__text" id="wf-race-over-text">Your race attempt has ended.</p>
+      <a class="wf-btn wf-btn--ghost" href="{% url 'logout' %}">EXIT</a>
+    </div>
   </main>
 </div>
 
 {{ race_urls|json_script:"wf-race-urls" }}
+{{ race_config|json_script:"wf-race-config" }}
+{{ state|json_script:"wf-race-state" }}
 <script src="{% static 'js/wf-race.js' %}" defer></script>
 </body>
 </html>

@@ -1,34 +1,50 @@
 import re
 
 from django.contrib.auth import authenticate, login, logout
+from django.db import IntegrityError, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.db import IntegrityError, transaction
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
 
-from .checks import HINT_LEVELS, TOTAL_CHECKS, hint_text, run_checks
+from .checks import TOTAL_CHECKS, run_checks
 from .game_config import (
     CHALLENGE_HTML,
     DIFFICULTY,
     GAME_DURATION_SECONDS,
     MODE,
     CHALLENGE_LABEL,
+    RACE_BASE_POINTS,
+    RACE_CLEAN_RUN_BONUS,
+    RACE_COLLISION_PENALTY,
+    RACE_COURSE_SECONDS,
+    RACE_MAX_COLLISIONS,
+    RACE_MAX_SCORE,
+    RACE_OBSTACLE_COUNT,
+    RACE_OBSTACLE_MARKS,
+    RACE_OBSTACLE_POINTS,
+    RACE_OBSTACLE_TIMES,
+    RACE_STATE_SYNC_SECONDS,
+    RACE_TIME_POINTS,
+    RACE_TIMING_GRACE_SECONDS,
     SITE_NAME,
     SITE_TAGLINE,
     SOLUTION_CSS,
     STARTER_CSS,
     TIMER_DANGER_SECONDS,
-    TIMER_SYNC_INTERVAL_SECONDS,
     TIMER_WARNING_SECONDS,
 )
-from .models import CssRule, FinalSubmission, HintReveal, User
-from .templatetags.wf_hints import code_spans
-
-# Generous ceiling; the shipped stylesheet is ~25 KB.
-MAX_SUBMISSION_CHARS = 200_000
+from .models import (
+    RACE_ACTIVE,
+    RACE_COMPLETED,
+    RACE_EXPIRED,
+    RACE_NOT_STARTED,
+    CssRule,
+    FinalSubmission,
+    User,
+)
 
 # Everything the templates need to name the current round in one place.
 CHALLENGE = {
@@ -39,6 +55,21 @@ CHALLENGE = {
     'mode': MODE,
     'minutes': GAME_DURATION_SECONDS // 60,
     'objectives': TOTAL_CHECKS,
+    'obstacles': RACE_OBSTACLE_COUNT,
+}
+
+# The course description the browser draws from. It is sent to the page rather
+# than hardcoded in the script so the client and the server can never disagree
+# about where an obstacle is or how long the course takes.
+RACE_CONFIG = {
+    'duration': GAME_DURATION_SECONDS,
+    'course': RACE_COURSE_SECONDS,
+    'obstacleCount': RACE_OBSTACLE_COUNT,
+    'obstacleMarks': list(RACE_OBSTACLE_MARKS),
+    'obstacleTimes': list(RACE_OBSTACLE_TIMES),
+    'warnSeconds': TIMER_WARNING_SECONDS,
+    'dangerSeconds': TIMER_DANGER_SECONDS,
+    'syncSeconds': RACE_STATE_SYNC_SECONDS,
 }
 
 
@@ -55,7 +86,11 @@ def _ensure_session(request):
 
 
 def _get_submission(user):
-    """The player's stylesheet. The markup is fixed and never stored per-user."""
+    """The player's stylesheet row.
+
+    The race does not write CSS any more, but rounds recorded by the previous
+    CSS-editor version still have one and `finalize_if_due` still reads it.
+    """
     submission, _ = CssRule.objects.get_or_create(
         user=user,
         defaults={'html': '', 'css': STARTER_CSS},
@@ -63,29 +98,15 @@ def _get_submission(user):
     return submission
 
 
-def _record_progress(user, passed):
-    """Persist a new personal best, and completion once every objective is met.
-
-    Completion is only awarded while the session is still live: running out of
-    time closes the round whatever the last submission scores.
-    """
-    fields = []
-    if passed > user.best_score:
-        user.best_score = passed
-        fields.append('best_score')
-    if passed == TOTAL_CHECKS and not user.completed_at and not user.is_expired:
-        user.completed_at = timezone.now()
-        fields.append('completed_at')
-    if fields:
-        user.save(update_fields=fields)
-
-
 def finalize_if_due(user):
     """Freeze an unfinished round at the authoritative server deadline.
 
-    New race attempts use race_started_at and a 1000-point result. Legacy
-    records created by the previous CSS-editor version still finalize using
-    their old submission data, so an existing database remains readable.
+    A race that ran out of time is recorded as an *ineligible* entry: the
+    performance is kept for the organisers, but nothing about it counts as a
+    completion, and it never unlocks the fixed website.
+
+    Legacy records created by the previous CSS-editor version still finalize
+    using their old submission data, so an existing database stays readable.
     """
     if not user.is_expired:
         return None
@@ -98,8 +119,8 @@ def finalize_if_due(user):
             'started_at': user.race_started_at,
             'submitted_at': user.deadline or timezone.now(),
             'final_css': STARTER_CSS,
-            'score': user.best_score,
-            'total': 1000,
+            'score': 0,
+            'total': RACE_MAX_SCORE,
             'reached_all': False,
             'design_mode': False,
             'eligible': False,
@@ -134,6 +155,7 @@ def finalize_if_due(user):
     except IntegrityError:
         return FinalSubmission.objects.get(user=user)
 
+
 def finalize_all_due():
     """Settle every round whose deadline has passed but was never revisited.
 
@@ -146,6 +168,7 @@ def finalize_all_due():
     """
     due = User.objects.filter(
         game_start_time__isnull=False,
+        race_completed_at__isnull=True,
         final_submission__isnull=True,
         game_start_time__lte=timezone.now() - timezone.timedelta(
             seconds=GAME_DURATION_SECONDS),
@@ -153,25 +176,56 @@ def finalize_all_due():
     return sum(1 for user in due if finalize_if_due(user) is not None)
 
 
-def _state(user):
-    """Backward-compatible state shape, now representing the race."""
-    final = FinalSubmission.objects.filter(user=user).first()
+# ------------------------------------------------------------ race state ----
+
+def _race_state(user):
+    """The one shape every race endpoint answers with.
+
+    Every number in it is read from the database or the server clock. The
+    browser renders this; it never contributes to it.
+    """
     return {
+        'status': user.race_status,
+        'started': bool(user.race_started_at),
         'remaining': user.remaining_seconds,
+        'elapsed': user.elapsed_seconds if user.race_started_at else 0,
         'duration': GAME_DURATION_SECONDS,
+        'course': RACE_COURSE_SECONDS,
         'expired': user.is_expired,
-        'completed': user.design_mode,
-        'designMode': user.design_mode,
-        'locked': user.is_locked,
-        'score': user.best_score,
-        'total': TOTAL_CHECKS,
-        'eligible': user.is_eligible,
-        'hintsUsed': 0,
-        'objectivesHinted': 0,
-        'maxHints': 0,
-        'submitted': final is not None,
-        'submittedAt': final.submitted_at.isoformat() if final else None,
+        'completed': bool(user.race_completed_at),
+        'obstacles': user.race_obstacles,
+        'obstacleCount': RACE_OBSTACLE_COUNT,
+        'collisions': user.race_collisions,
+        'score': user.best_score if user.race_completed_at else 0,
     }
+
+
+def _settle_expired(user):
+    """Record the timeout entry the moment the server notices the deadline."""
+    if user.is_expired:
+        finalize_if_due(user)
+
+
+def race_score(elapsed, obstacles, collisions):
+    """The official score. Server-side, deterministic, and the only one.
+
+    Finishing sooner scores more, every obstacle scores, every collision
+    costs, and a clean run earns the last few points. Completing the course
+    perfectly at the earliest possible moment is exactly RACE_MAX_SCORE.
+    """
+    span = max(1, GAME_DURATION_SECONDS - RACE_COURSE_SECONDS)
+    time_points = int(RACE_TIME_POINTS * (GAME_DURATION_SECONDS - elapsed) / span)
+    time_points = max(0, min(RACE_TIME_POINTS, time_points))
+
+    score = (
+        RACE_BASE_POINTS
+        + time_points
+        + obstacles * RACE_OBSTACLE_POINTS
+        - collisions * RACE_COLLISION_PENALTY
+    )
+    if collisions == 0 and obstacles >= RACE_OBSTACLE_COUNT:
+        score += RACE_CLEAN_RUN_BONUS
+    return max(0, min(RACE_MAX_SCORE, score))
 
 
 # ---------------------------------------------------------------- pages ----
@@ -190,28 +244,42 @@ def start(request):
 
 
 def home(request):
-    """Broken-site briefing. The 12-minute clock starts only when the race starts."""
+    """Broken-site briefing.
+
+    Rendering this page reads state and never writes any: opening it, or
+    reopening it, does not start the race. Only START RACE does.
+    """
     if not request.user.is_authenticated:
         return redirect('login')
 
     _ensure_session(request)
-    state = _state(request.user)
+    user = request.user
+    _settle_expired(user)
+
+    if user.race_status == RACE_COMPLETED:
+        return redirect('race_result')
+
     return render(request, 'entry.html', {
         'challenge': CHALLENGE,
-        'state': state,
+        'state': _race_state(user),
+        'race_config': RACE_CONFIG,
+        'race_over': user.race_status == RACE_EXPIRED,
+        'race_active': user.race_status == RACE_ACTIVE,
         'broken_url': reverse('api_broken_preview'),
         'race_urls': {
             'start': reverse('api_race_start'),
             'state': reverse('api_race_state'),
+            'progress': reverse('api_race_progress'),
             'complete': reverse('api_race_complete'),
             'result': reverse('race_result'),
-            'fixed': reverse('api_final_preview'),
+            'home': reverse('home'),
             'exit': reverse('logout'),
         },
     })
 
 
 def race_result(request):
+    """The performance record. It never declares anybody the winner."""
     if not request.user.is_authenticated:
         return redirect('login')
     user = request.user
@@ -221,8 +289,10 @@ def race_result(request):
         'challenge': CHALLENGE,
         'user': user,
         'score': user.best_score,
+        'max_score': RACE_MAX_SCORE,
         'time_seconds': user.race_time_seconds,
         'obstacles': user.race_obstacles,
+        'obstacle_count': RACE_OBSTACLE_COUNT,
         'collisions': user.race_collisions,
         'fixed_url': reverse('api_final_preview'),
     })
@@ -231,13 +301,13 @@ def race_result(request):
 def _render_novacloud(css):
     """The challenge markup rendered with `css`, for a sandboxed iframe.
 
-    Used by both preview endpoints — the official solution and a player's own
-    submitted design — so the two render through exactly the same path and
-    differ only in which stylesheet goes in.
+    Used by every preview endpoint — the broken page, the official solution
+    and a player's own recorded entry — so they all render through exactly the
+    same path and differ only in which stylesheet goes in.
 
-    The site sends X-Frame-Options: DENY everywhere else; these two views are
-    relaxed to SAMEORIGIN because the arena and the admin frame them. They
-    stay un-embeddable by any other origin, and the frames carry an empty
+    The site sends X-Frame-Options: DENY everywhere else; these views are
+    relaxed to SAMEORIGIN because the game pages and the admin frame them.
+    They stay un-embeddable by any other origin, and the frames carry an empty
     `sandbox` so the CSS inside cannot reach the page around it.
     """
     document = _STYLESHEET_LINK.sub(
@@ -249,136 +319,193 @@ def _render_novacloud(css):
     return response
 
 
-@require_POST
-def api_hint(request):
-    """Reveal one hint, and record that it was revealed.
+@xframe_options_sameorigin
+def broken_preview(request):
+    """Render the intentionally broken NovaCloud page before the race.
 
-    The count is kept here, not in the browser: a level is charged the first
-    time it is opened and never again, so re-reading a hint is free and no
-    amount of clicking (or a forged `hints_used`) can change the total.
+    Reading it is free and changes nothing — in particular it does not start
+    the clock, which is why the briefing can show it before START RACE.
+    """
+    if not request.user.is_authenticated:
+        return redirect('login')
+    return _render_novacloud(STARTER_CSS)
+
+
+# ------------------------------------------------------------- race api ----
+
+@require_POST
+def api_race_start(request):
+    """Begin the one official attempt, and stamp the start time server-side.
+
+    This is the *only* place a race clock ever begins. Replaying the request —
+    a refresh, a second tab, a retried fetch — returns the running race
+    unchanged rather than granting a fresh twelve minutes.
     """
     if not request.user.is_authenticated:
         return JsonResponse({'error': 'Not logged in'}, status=403)
 
     user = request.user
-    if user.is_locked:
-        payload = _state(user)
-        payload['error'] = 'Time is up!'
-        return JsonResponse(payload, status=200)
+    status = user.race_status
 
-    objective = (request.POST.get('objective') or '').strip()
-    try:
-        level = int(request.POST.get('level') or 0)
-    except (TypeError, ValueError):
-        level = 0
-
-    text = hint_text(objective, level)
-    if text is None:
-        return JsonResponse({'error': 'No such hint'}, status=400)
-
-    _, created = HintReveal.objects.get_or_create(
-        user=user, objective=objective, level=level,
-    )
-
-    payload = _state(user)
-    payload.update({
-        'objective': objective,
-        'level': level,
-        'hint': text,
-        'hintHtml': code_spans(text),
-        'charged': created,
-    })
-    return JsonResponse(payload)
-
-
-@xframe_options_sameorigin
-def broken_preview(request):
-    """Render the intentionally broken NovaCloud page before the race."""
-    return _render_novacloud(STARTER_CSS)
-
-
-@require_POST
-def api_race_start(request):
-    if not request.user.is_authenticated:
-        return JsonResponse({'error': 'Not logged in'}, status=403)
-    user = request.user
-    if user.race_completed_at:
-        return JsonResponse({'error': 'Challenge already completed.', 'completed': True}, status=409)
-    if user.race_started_at and not user.is_expired:
-        return JsonResponse(_race_state(user))
-    if user.race_started_at and user.is_expired:
-        return JsonResponse({'error': 'Time is up. This attempt has ended.', 'expired': True}, status=409)
+    if status == RACE_COMPLETED:
+        return JsonResponse(
+            {**_race_state(user), 'error': 'This attempt is already finished.',
+             'redirect': reverse('race_result')},
+            status=409,
+        )
+    if status == RACE_EXPIRED:
+        _settle_expired(user)
+        return JsonResponse(
+            {**_race_state(user), 'error': "Time is up. Your race attempt has ended."},
+            status=409,
+        )
+    if status == RACE_ACTIVE:
+        # A refresh mid-race: hand back the running attempt, untouched.
+        return JsonResponse({**_race_state(user), 'resumed': True})
 
     user.start_challenge()
-    return JsonResponse(_race_state(user))
-
-
-def _race_state(user):
-    return {
-        'started': bool(user.race_started_at),
-        'remaining': user.remaining_seconds,
-        'duration': GAME_DURATION_SECONDS,
-        'expired': user.is_expired,
-        'completed': bool(user.race_completed_at),
-        'score': user.best_score,
-        'obstacles': user.race_obstacles,
-        'collisions': user.race_collisions,
-    }
+    return JsonResponse({**_race_state(user), 'resumed': False})
 
 
 def api_race_state(request):
+    """Authoritative race state. The browser only renders what this says."""
     if not request.user.is_authenticated:
         return JsonResponse({'error': 'Not logged in'}, status=403)
+    _settle_expired(request.user)
     return JsonResponse(_race_state(request.user))
 
 
 @require_POST
-def api_race_complete(request):
-    """Server-authoritative race completion and score calculation."""
+def api_race_progress(request):
+    """Record one obstacle cleared, or one collision, while the race runs.
+
+    This is what keeps the finish honest. An obstacle is only accepted when
+
+      * the race is genuinely active,
+      * it is the next obstacle in course order, and
+      * the course has actually had time to carry it to the car.
+
+    So the six clears the completion endpoint insists on cannot be conjured
+    up: they take at least as long as driving the course does.
+    """
     if not request.user.is_authenticated:
         return JsonResponse({'error': 'Not logged in'}, status=403)
 
     user = request.user
-    if user.race_completed_at:
-        return JsonResponse({**_race_state(user), 'redirect': reverse('race_result')})
-    if not user.race_started_at:
-        return JsonResponse({'error': 'Race has not started.'}, status=400)
-    if user.is_expired:
-        return JsonResponse({**_race_state(user), 'error': 'Time is up.'}, status=409)
+    status = user.race_status
+    if status == RACE_NOT_STARTED:
+        return JsonResponse(
+            {**_race_state(user), 'error': 'Race has not started.'}, status=400)
+    if status == RACE_COMPLETED:
+        return JsonResponse(
+            {**_race_state(user), 'error': 'This attempt is already finished.'},
+            status=409)
+    if status == RACE_EXPIRED:
+        _settle_expired(user)
+        return JsonResponse(
+            {**_race_state(user), 'error': "Time is up."}, status=409)
 
-    try:
-        obstacles = max(0, min(6, int(request.POST.get('obstacles') or 0)))
-        collisions = max(0, min(50, int(request.POST.get('collisions') or 0)))
-    except (TypeError, ValueError):
-        return JsonResponse({'error': 'Invalid race data.'}, status=400)
+    elapsed = user.elapsed_seconds
+    fields = []
 
-    elapsed = int((timezone.now() - user.race_started_at).total_seconds())
+    raw_obstacle = request.POST.get('obstacle')
+    if raw_obstacle not in (None, ''):
+        try:
+            index = int(raw_obstacle)
+        except (TypeError, ValueError):
+            return JsonResponse(
+                {**_race_state(user), 'error': 'Invalid obstacle.'}, status=400)
+
+        if not 1 <= index <= RACE_OBSTACLE_COUNT:
+            return JsonResponse(
+                {**_race_state(user), 'error': 'Invalid obstacle.'}, status=400)
+        if index <= user.race_obstacles:
+            # A replayed report. Already counted; say so without counting twice.
+            return JsonResponse({**_race_state(user), 'counted': False})
+        if index != user.race_obstacles + 1:
+            return JsonResponse(
+                {**_race_state(user), 'error': 'Obstacles must be cleared in order.'},
+                status=400)
+        if elapsed + RACE_TIMING_GRACE_SECONDS < RACE_OBSTACLE_TIMES[index - 1]:
+            return JsonResponse(
+                {**_race_state(user), 'error': 'That obstacle is still ahead of you.'},
+                status=400)
+
+        user.race_obstacles = index
+        fields.append('race_obstacles')
+
+    collision = (request.POST.get('collision') or '').strip().lower()
+    if collision not in ('', '0', 'false', 'no'):
+        if user.race_collisions < RACE_MAX_COLLISIONS:
+            user.race_collisions += 1
+            fields.append('race_collisions')
+
+    if fields:
+        user.save(update_fields=fields)
+    return JsonResponse({**_race_state(user), 'counted': bool(fields)})
+
+
+@require_POST
+def api_race_complete(request):
+    """Cross the finish line. The server decides whether that really happened.
+
+    Nothing the browser sends is scored. The completion is accepted only when
+    the server's own record says the attempt is active, the whole course has
+    gone past, and every obstacle was cleared along the way — and it can only
+    ever be accepted once.
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Not logged in'}, status=403)
+
+    user = request.user
+    status = user.race_status
+
+    if status == RACE_COMPLETED:
+        # Idempotent: a retried request lands on the existing result, and
+        # cannot overwrite the recorded performance.
+        return JsonResponse(
+            {**_race_state(user), 'redirect': reverse('race_result')}, status=409)
+    if status == RACE_NOT_STARTED:
+        return JsonResponse(
+            {**_race_state(user), 'error': 'Race has not started.'}, status=400)
+    if status == RACE_EXPIRED:
+        _settle_expired(user)
+        return JsonResponse(
+            {**_race_state(user), 'error': "Time is up. Your race attempt has ended."},
+            status=409)
+
+    elapsed = user.elapsed_seconds
+    if user.race_obstacles < RACE_OBSTACLE_COUNT:
+        return JsonResponse(
+            {**_race_state(user),
+             'error': 'You have not cleared every obstacle yet.'}, status=400)
+    if elapsed + RACE_TIMING_GRACE_SECONDS < RACE_COURSE_SECONDS:
+        return JsonResponse(
+            {**_race_state(user),
+             'error': 'You have not reached the finish line yet.'}, status=400)
+
+    obstacles = min(RACE_OBSTACLE_COUNT, user.race_obstacles)
+    collisions = min(RACE_MAX_COLLISIONS, user.race_collisions)
     elapsed = max(1, min(GAME_DURATION_SECONDS, elapsed))
-
-    # Fair, deterministic score: finishing quickly matters, every obstacle
-    # matters, and collisions cost points. Completing all six obstacles within
-    # 12 minutes can reach 1000; no client-supplied score is trusted.
-    time_points = max(0, int((GAME_DURATION_SECONDS - elapsed) / GAME_DURATION_SECONDS * 400))
-    obstacle_points = obstacles * 80
-    collision_penalty = collisions * 15
-    score = max(0, min(1000, 120 + time_points + obstacle_points - collision_penalty))
-    if obstacles == 6:
-        score = min(1000, score + 80)
+    score = race_score(elapsed, obstacles, collisions)
 
     now = timezone.now()
-    user.race_completed_at = now
-    user.completed_at = now
-    user.race_time_seconds = elapsed
-    user.race_obstacles = obstacles
-    user.race_collisions = collisions
-    user.best_score = score
-    user.save(update_fields=[
-        'race_completed_at', 'completed_at', 'race_time_seconds',
-        'race_obstacles', 'race_collisions', 'best_score',
-    ])
+    updated = User.objects.filter(
+        pk=user.pk, race_completed_at__isnull=True,
+    ).update(
+        race_completed_at=now,
+        completed_at=now,
+        race_time_seconds=elapsed,
+        best_score=score,
+    )
+    user.refresh_from_db()
+    if not updated:
+        # Two requests raced each other; the first one is the record.
+        return JsonResponse(
+            {**_race_state(user), 'redirect': reverse('race_result')}, status=409)
 
-    # Store an immutable competition record. The completed game is rewarded
-    # with the official fixed stylesheet, while timeout records remain ineligible.
+    # The immutable competition record. A completed race is eligible and is
+    # rewarded with the fixed stylesheet; timeout entries never are.
     FinalSubmission.objects.get_or_create(
         user=user,
         defaults={
@@ -387,24 +514,25 @@ def api_race_complete(request):
             'submitted_at': now,
             'final_css': SOLUTION_CSS,
             'score': score,
-            'total': 1000,
-            'reached_all': obstacles == 6,
+            'total': RACE_MAX_SCORE,
+            'reached_all': obstacles == RACE_OBSTACLE_COUNT,
             'design_mode': True,
             'eligible': True,
             'hints_used': 0,
             'objectives_hinted': 0,
         },
     )
-    return JsonResponse({**_race_state(user), 'elapsed': elapsed, 'redirect': reverse('race_result')})
+    return JsonResponse({**_race_state(user), 'redirect': reverse('race_result')})
 
+
+# --------------------------------------------------------- the reward ----
 
 @xframe_options_sameorigin
 def final_design(request):
-    """Render the player's own submitted design: the markup + *their* CSS.
+    """Render the player's own recorded entry.
 
-    Distinct from `final_preview`, which renders the official solution. This
-    one is what the judges look at, and it only exists once the round has
-    been submitted.
+    Distinct from `final_preview`, which renders the official solution. It
+    only exists once the round has been recorded.
     """
     if not request.user.is_authenticated:
         return redirect('login')
@@ -419,18 +547,16 @@ def final_design(request):
 
 @xframe_options_sameorigin
 def final_preview(request):
-    """Render the finished NovaCloud page: the fixed markup + the gold standard.
+    """The finished NovaCloud page: the reward for crossing the finish line.
 
-    A *visual reference only*. It reads nothing from the player and writes
-    nothing back: no grading, no progress, no autosave, and deliberately no
-    `start_challenge()` call, so opening it never touches the clock.
-
-    The composed document is served from here rather than embedded in the arena
-    page so the arena's own source never carries the answers, and it is loaded
-    into a sandboxed iframe so it cannot reach the game shell.
+    It is locked until the server has recorded a completed race. Running out
+    of time does not open it, and neither does simply being logged in — the
+    fixed site is the prize, not a reference.
     """
     if not request.user.is_authenticated:
         return redirect('login')
+    if not request.user.race_completed_at:
+        return redirect('home')
 
     return _render_novacloud(SOLUTION_CSS)
 
@@ -480,91 +606,3 @@ def user_login(request):
 def user_logout(request):
     logout(request)
     return redirect('login')
-
-
-# ------------------------------------------------------------------ api ----
-
-def _read_submitted_css(request):
-    """The challenge is CSS only: any `html` field in the POST is ignored.
-
-    The markup the player sees is read-only and the markup the checker grades
-    always comes from `CHALLENGE_HTML`, so a forged `html` parameter cannot
-    change the page or the score.
-    """
-    return (request.POST.get('css') or '')[:MAX_SUBMISSION_CHARS]
-
-
-@require_POST
-def save_css(request):
-    """Autosave. Refuses writes once the session is locked (time up / done)."""
-    if not request.user.is_authenticated:
-        return JsonResponse({'error': 'Not logged in'}, status=403)
-
-    state = _state(request.user)
-    if state['locked']:
-        state['error'] = 'Time is up!' if state['expired'] else 'Challenge already completed.'
-        return JsonResponse(state, status=200)
-
-    css = _read_submitted_css(request)
-    CssRule.objects.update_or_create(
-        user=request.user, defaults={'css': css},
-    )
-    return JsonResponse(state)
-
-
-def get_css(request):
-    if not request.user.is_authenticated:
-        return JsonResponse({'html': '', 'css': ''})
-    submission = _get_submission(request.user)
-    # The markup is the same for everybody and is never edited.
-    return JsonResponse({'html': CHALLENGE_HTML, 'css': submission.css})
-
-
-def api_state(request):
-    """Authoritative countdown source. The browser only renders it."""
-    if not request.user.is_authenticated:
-        return JsonResponse({'error': 'Not logged in'}, status=403)
-    return JsonResponse(_state(request.user))
-
-
-@require_POST
-def api_check(request):
-    """Save, then grade the submission against the challenge objectives."""
-    if not request.user.is_authenticated:
-        return JsonResponse({'error': 'Not logged in'}, status=403)
-
-    user = request.user
-    if user.is_locked:
-        submission = _get_submission(user)
-        payload = _state(user)
-        payload['checks'] = run_checks(CHALLENGE_HTML, submission.css)
-        payload['error'] = 'Time is up!' if user.is_expired else 'Challenge already completed.'
-        return JsonResponse(payload)
-
-    css = _read_submitted_css(request)
-    CssRule.objects.update_or_create(user=user, defaults={'css': css})
-
-    checks = run_checks(CHALLENGE_HTML, css)
-    passed = sum(1 for check in checks if check['passed'])
-    _record_progress(user, passed)
-
-    payload = _state(user)
-    payload['checks'] = checks
-    payload['passed'] = passed
-    return JsonResponse(payload)
-
-
-@require_POST
-def api_reset(request):
-    """Put the broken page back. Does not touch the countdown."""
-    if not request.user.is_authenticated:
-        return JsonResponse({'error': 'Not logged in'}, status=403)
-    if request.user.is_locked:
-        return JsonResponse(_state(request.user))
-
-    CssRule.objects.update_or_create(
-        user=request.user, defaults={'css': STARTER_CSS},
-    )
-    payload = _state(request.user)
-    payload.update({'css': STARTER_CSS})
-    return JsonResponse(payload)

@@ -20,7 +20,8 @@ below is the authoritative list of what is scored, and `checks.py` grades the
 
 from pathlib import Path
 
-# Hard 12 minute racing session.
+# Hard 12 minute racing session. This is the *maximum* the attempt may last,
+# not how long the course takes; it is enforced by the server.
 GAME_DURATION_SECONDS = 12 * 60
 
 # Below this many seconds the race UI switches its timer into warning/danger states.
@@ -29,6 +30,48 @@ TIMER_WARNING_SECONDS = 5 * 60
 
 # How often the browser re-syncs its countdown with the server.
 TIMER_SYNC_INTERVAL_SECONDS = 20
+
+# How often the running race re-reads the authoritative clock. Short, because
+# this is what makes a tampered-with browser clock stop mattering.
+RACE_STATE_SYNC_SECONDS = 5
+
+
+# ------------------------------------------------------------- the race ----
+#
+# The course scrolls at a fixed pace, so "where the car is" is a pure function
+# of how long the race has been running. That is what lets the *server* check
+# the browser's claims: an obstacle cannot be cleared before the course has
+# carried it to the car, and the finish line cannot be reached before the
+# whole course has gone past.
+
+# How long the course itself takes to scroll from the start to the finish line.
+RACE_COURSE_SECONDS = 180
+
+# Obstacles on the course, and where each one sits along it (0 = start line,
+# 1 = finish line). The browser positions them from exactly these numbers.
+RACE_OBSTACLE_COUNT = 6
+RACE_OBSTACLE_MARKS = (0.10, 0.24, 0.38, 0.52, 0.66, 0.82)
+
+# The earliest second at which each obstacle can possibly reach the car.
+RACE_OBSTACLE_TIMES = tuple(
+    int(mark * RACE_COURSE_SECONDS) for mark in RACE_OBSTACLE_MARKS
+)
+
+# Slack allowed on those times, for latency and frame timing. Small enough
+# that it cannot be used to skip the course, large enough to be fair.
+RACE_TIMING_GRACE_SECONDS = 4
+
+# A hostile client can post collisions all day; it only ever costs it points,
+# but the counter still needs a ceiling it cannot overflow.
+RACE_MAX_COLLISIONS = 200
+
+# Server-side scoring. Nothing here is ever taken from the browser.
+RACE_MAX_SCORE = 1000
+RACE_BASE_POINTS = 200
+RACE_TIME_POINTS = 400
+RACE_OBSTACLE_POINTS = 60
+RACE_COLLISION_PENALTY = 15
+RACE_CLEAN_RUN_BONUS = 40
 
 
 # ------------------------------------------------------------ challenge ----

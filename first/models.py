@@ -4,6 +4,18 @@ from django.utils import timezone
 
 from .game_config import GAME_DURATION_SECONDS
 
+# The race state machine, in one place.
+#
+#   NOT_STARTED --START RACE--> ACTIVE --finish line--> COMPLETED
+#                                     \--deadline----> EXPIRED
+#
+# COMPLETED and EXPIRED are terminal: a completed race never becomes active or
+# expired again, and an expired race can never be completed.
+RACE_NOT_STARTED = 'not_started'
+RACE_ACTIVE = 'active'
+RACE_COMPLETED = 'completed'
+RACE_EXPIRED = 'expired'
+
 
 # Custom User Manager
 class UserManager(BaseUserManager):
@@ -80,14 +92,23 @@ class User(AbstractBaseUser):
     # -- challenge clock ---------------------------------------------------
 
     def start_challenge(self):
-        """Start the new race once. Refreshing never restarts the clock."""
-        if not self.race_started_at:
-            now = timezone.now()
-            self.race_started_at = now
-            # Keep the legacy field populated so old admin/reporting code and
-            # existing migrations remain compatible.
-            self.game_start_time = now
-            self.save(update_fields=["race_started_at", "game_start_time"])
+        """Start the one official race attempt.
+
+        Called only from the START RACE endpoint. Refreshing, reopening the
+        page or replaying the request never restarts the clock: the timestamp
+        is written once, by the server, and never again.
+
+        Returns True if this call actually started the race.
+        """
+        if self.race_started_at or self.race_completed_at:
+            return False
+        now = timezone.now()
+        self.race_started_at = now
+        # Keep the legacy field populated so old admin/reporting code and
+        # existing migrations remain compatible.
+        self.game_start_time = now
+        self.save(update_fields=["race_started_at", "game_start_time"])
+        return True
 
     @property
     def _round_started_at(self):
@@ -102,16 +123,41 @@ class User(AbstractBaseUser):
         return started + timezone.timedelta(seconds=GAME_DURATION_SECONDS)
 
     @property
+    def elapsed_seconds(self):
+        """Whole seconds since the server started the round. 0 if unstarted."""
+        started = self._round_started_at
+        if not started:
+            return 0
+        return max(0, int((timezone.now() - started).total_seconds()))
+
+    @property
     def remaining_seconds(self):
         started = self._round_started_at
         if not started:
             return GAME_DURATION_SECONDS
-        elapsed = (timezone.now() - started).total_seconds()
-        return max(0, int(GAME_DURATION_SECONDS - elapsed))
+        return max(0, GAME_DURATION_SECONDS - self.elapsed_seconds)
 
     @property
     def is_expired(self):
+        """True once the deadline has passed on a round that never finished.
+
+        A finished race is *completed*, not expired — the two are different
+        terminal states and a finished attempt must never fall into the second
+        one just because twelve minutes have since gone by.
+        """
+        if self.race_completed_at:
+            return False
         return self._round_started_at is not None and self.remaining_seconds <= 0
+
+    @property
+    def race_status(self):
+        if self.race_completed_at:
+            return RACE_COMPLETED
+        if not self.race_started_at:
+            return RACE_NOT_STARTED
+        if self.remaining_seconds <= 0:
+            return RACE_EXPIRED
+        return RACE_ACTIVE
 
     @property
     def design_mode(self):

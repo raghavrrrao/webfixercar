@@ -13,6 +13,7 @@ from django.utils.html import format_html, format_html_join
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 from .checks import HINT_LEVELS, OBJECTIVE_TITLES, TOTAL_CHECKS
+from .game_config import RACE_MAX_SCORE
 from .models import CssRule, FinalSubmission, HintReveal, User
 from .views import _render_novacloud, finalize_all_due
 
@@ -38,10 +39,11 @@ class ParticipantAdmin(admin.ModelAdmin):
     """The people at the PCs. Deleting one here removes all their data."""
 
     list_display = (
-        'pc_no', 'username', 'score_display', 'race_time_display', 'status_display',
+        'pc_no', 'username', 'status_display', 'score_display', 'race_time_display',
+        'race_obstacles', 'race_collisions', 'race_started_at', 'race_completed_at',
         'eligible_display', 'submitted_display',
     )
-    list_filter = ('is_admin', 'completed_at')
+    list_filter = ('is_admin', 'race_completed_at', 'race_started_at')
     search_fields = ('pc_no', 'username')
     ordering = ('pc_no',)
     inlines = (HintRevealInline,)
@@ -49,20 +51,27 @@ class ParticipantAdmin(admin.ModelAdmin):
     readonly_fields = (
         'pc_no', 'username', 'registered_at', 'game_start_time', 'completed_at',
         'best_score', 'race_started_at', 'race_completed_at', 'race_time_seconds',
-        'race_time_display', 'race_obstacles', 'race_collisions', 'last_login', 'score_display', 'status_display',
+        'race_time_display', 'race_obstacles', 'race_collisions', 'last_login',
+        'score_display', 'status_display', 'expired_display',
         'eligible_display', 'hints_display', 'submitted_display', 'judging_links',
     )
     # `password` is deliberately absent: organisers never need a participant's
     # credentials, so the hash is not rendered anywhere in this admin.
     fields = (
-        'pc_no', 'username', 'registered_at', 'game_start_time', 'completed_at',
-        'score_display', 'race_time_display', 'status_display', 'eligible_display',
-        'submitted_display', 'judging_links', 'is_admin', 'is_active',
+        'pc_no', 'username', 'registered_at', 'status_display', 'expired_display',
+        'race_started_at', 'race_completed_at', 'race_time_display',
+        'race_obstacles', 'race_collisions', 'score_display',
+        'eligible_display', 'submitted_display', 'judging_links',
+        'game_start_time', 'completed_at', 'is_admin', 'is_active',
     )
 
     @admin.display(description='Score', ordering='best_score')
     def score_display(self, obj):
-        return _score_label(obj.best_score, 1000)
+        return _score_label(obj.best_score, RACE_MAX_SCORE)
+
+    @admin.display(description='Timed out', boolean=True)
+    def expired_display(self, obj):
+        return obj.is_expired
 
 
     @admin.display(description='Race time', ordering='race_time_seconds')
@@ -72,13 +81,12 @@ class ParticipantAdmin(admin.ModelAdmin):
         return f'{obj.race_time_seconds // 60:02d}:{obj.race_time_seconds % 60:02d}'
     @admin.display(description='Status')
     def status_display(self, obj):
-        if not obj.race_started_at:
-            return 'Not started'
-        if obj.race_completed_at:
-            return 'Finished'
-        if not obj.is_expired:
-            return 'Racing'
-        return 'Time up'
+        return {
+            'not_started': 'Not started',
+            'active': 'Racing',
+            'completed': 'Finished',
+            'expired': 'Time up',
+        }[obj.race_status]
 
     @admin.display(description='Eligible', boolean=True)
     def eligible_display(self, obj):

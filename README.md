@@ -52,7 +52,8 @@ daphne -b 127.0.0.1 -p 8000 games.asgi:application
 | Game shell UI | `static/css/wf-*.css`, `static/js/wf-*.js`, `template/*.html` |
 
 Flow: `/` (home) → `/signup/` or `/login/` → `/start/` (launch screen) →
-`/home/` (arena) → success or timeout.
+`/home/` (briefing + broken site) → **START RACE** → the race → `/race-result/`
+→ the fixed NovaCloud site, or a timeout that ends the attempt.
 
 ### The challenge is three files
 
@@ -192,22 +193,26 @@ instead would put NovaCloud permanently inside its own 860px breakpoint and
 hide the desktop-only mistakes. The **Phone** toggle switches to a 390px
 virtual width.
 
-### The 30 minute timer
+### The 12 minute race timer
 
-`GAME_DURATION_SECONDS = 30 * 60` lives in `first/game_config.py`.
+`GAME_DURATION_SECONDS = 12 * 60` lives in `first/game_config.py`.
 
-`User.game_start_time` is stamped **once**, the first time the player opens the
-arena (`User.start_challenge()` is a no-op if it is already set). Every
-remaining-time value is computed on the server from that timestamp:
+`User.race_started_at` is stamped **once**, by the server, and only by
+`POST /api/race/start/`. `User.start_challenge()` refuses to write it a second
+time, so opening the briefing, reloading it, opening a second tab, logging out
+and back in, or replaying the request all return the *running* attempt rather
+than a fresh twelve minutes. Every remaining-time value is computed on the
+server from that timestamp:
 
-* the arena page ships the current `remaining` in `#wf-arena-data`;
-* the browser only *renders* a countdown from it and re-syncs with
-  `GET /api/state/` every 20 seconds and on window focus;
-* `POST /save-css/`, `POST /api/check/` and `POST /api/reset/` all re-check
-  `user.is_locked` and refuse the write when the session is over.
+* the briefing ships the current state in `#wf-race-state`;
+* the browser only *renders* a countdown from it, advances it with
+  `performance.now()` (a monotonic clock, so changing the machine's time does
+  nothing) and re-syncs with `GET /api/race/state/` every 5 seconds;
+* `POST /api/race/progress/` and `POST /api/race/complete/` both re-read
+  `user.race_status` and refuse the write once the attempt is over.
 
-Refreshing, editing `timeLeft` in devtools, or clearing local storage changes
-nothing — the clock is a database timestamp.
+Refreshing, editing the countdown in devtools, or moving the system clock
+changes nothing — the clock is a database timestamp.
 
 ### CSS isolation
 
@@ -332,4 +337,41 @@ The competition now uses the existing Django project with a lightweight CSS-them
 7. One overall winner is selected by the organizers from the recorded results.
 
 The old CSS editor files and grading code are retained for compatibility with existing project data, but the active player flow is the racing challenge.
-"# webfixercar" 
+
+### What the server decides, and what it cannot
+
+The browser is never believed. The server owns:
+
+* **the clock** — `race_started_at` is written once, by `POST /api/race/start/`;
+* **the state machine** — `NOT_STARTED → ACTIVE → COMPLETED | EXPIRED`, with
+  both end states terminal (`User.race_status`);
+* **obstacle progress** — `POST /api/race/progress/` accepts an obstacle only
+  when it is the *next* one in course order and the course has had time to
+  carry it to the car (`RACE_OBSTACLE_TIMES`, plus a few seconds of grace), so
+  six clears cannot be produced faster than the course can be driven;
+* **the finish line** — `POST /api/race/complete/` requires an active race,
+  every obstacle already recorded, and at least `RACE_COURSE_SECONDS` elapsed;
+* **the score** — `views.race_score()`, computed from the server's own
+  recorded elapsed time, obstacle count and collision count. Nothing posted by
+  the browser (`score`, `obstacles`, `collisions`, `elapsed`) is ever read.
+
+Known limits, stated plainly. This is a browser game, so it is not
+cheat-proof, and the goal is only that trivial devtools or curl manipulation
+cannot produce a winning result:
+
+* **Collisions are self-reported.** The server counts what the browser tells
+  it and never lets the number go down, but a patched client can simply not
+  report a hit. Collisions only ever *subtract* points, so the worst case is a
+  participant claiming a cleaner run than they drove.
+* **Obstacle clears are time-gated, not skill-verified.** The server proves
+  the participant was present and that the course had time to reach each
+  obstacle; it does not simulate the car, so it cannot prove they steered
+  around it rather than through it.
+* **The earliest possible finish is fixed.** Because the course scrolls at a
+  fixed pace, every completed run takes about `RACE_COURSE_SECONDS`; the time
+  component of the score separates a prompt finish from a stalled one, not one
+  driver's line from another's.
+
+Organisers compare the recorded runs in the Django admin and pick the one
+overall winner. Nothing in the application claims a winner or ranks anybody.
+ 
