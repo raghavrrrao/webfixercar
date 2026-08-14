@@ -1,0 +1,273 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Website Fixer — {{ challenge.label }} · {{ challenge.site }}</title>
+  <link rel="stylesheet" href="{% static 'css/wf-base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/wf-home.css' %}">
+</head>
+<body class="wf-body">
+
+<div class="wf-page">
+  <div class="wf-shell">
+    <header class="wf-topbar">
+      <a class="wf-brand" href="/">
+        <span class="wf-brand__mark">WF</span>
+        <span>
+          Website Fixer
+          <span class="wf-brand__sub">{{ challenge.label }} · {{ challenge.site }}</span>
+        </span>
+      </a>
+
+      <div class="wf-topbar__right">
+        <div class="wf-presence" data-presence data-state="connecting" title="Players connected right now">
+          <span class="wf-presence__dot" aria-hidden="true"></span>
+          <span class="wf-presence__count" data-presence-count>–</span>
+          <span data-presence-label>players online</span>
+        </div>
+        {% if request.user.is_authenticated %}
+          <a class="wf-btn wf-btn--ghost" href="/home/">Back to the race</a>
+        {% else %}
+          <a class="wf-btn wf-btn--ghost" href="/login/">Log in</a>
+        {% endif %}
+      </div>
+    </header>
+  </div>
+
+  <main class="wf-shell">
+
+    <!-- ===================== HERO ===================== -->
+    <section class="wf-hero">
+      <div class="wf-rise">
+        <span class="wf-badge wf-badge--accent">{{ challenge.label }} · {{ challenge.site }}</span>
+
+        <h1 class="wf-hero__title">Website<br><span>Fixer</span></h1>
+
+        <p class="wf-hero__kicker">Drive the course. Rebuild the site.</p>
+
+        <p class="wf-hero__lead">
+          <strong>The website is already built. The CSS is in pieces.</strong>
+          {{ challenge.site }} is a finished {{ challenge.tagline }} whose stylesheet went
+          wrong on the way to production. You don't type the fix — you
+          <strong>race for it</strong>. The {{ challenge.repairs }} CSS components that
+          repair the site are scattered along a {{ challenge.kilometres }} km course.
+        </p>
+
+        <div class="wf-cta-row">
+          {% if request.user.is_authenticated %}
+            <a class="wf-btn wf-btn--primary wf-btn--lg" href="/start/">Enter the race →</a>
+          {% else %}
+            <a class="wf-btn wf-btn--primary wf-btn--lg" href="/signup/">Start challenge →</a>
+            <a class="wf-btn wf-btn--ghost" href="/login/">I already registered</a>
+          {% endif %}
+        </div>
+
+        <p class="wf-cta-note">
+          Runs in the browser. Nothing to install. Your clock starts only when the race does.
+        </p>
+      </div>
+
+      <!-- decorative course readout -->
+      <div class="wf-card wf-window wf-rise wf-rise--2" aria-hidden="true">
+        <div class="wf-window__bar">
+          <span class="wf-window__dot"></span>
+          <span class="wf-window__dot"></span>
+          <span class="wf-window__dot"></span>
+          <span class="wf-window__name">repair-route.css</span>
+          <span class="wf-window__flag">{{ challenge.repairs }} components</span>
+        </div>
+        <pre class="wf-code"><span class="c-note">/* collect these, in this order */</span>
+
+<span class="c-sel">01</span>  <span class="c-prop">RESPONSIVE</span>   <span class="c-note">breakpoint backwards</span>
+<span class="c-sel">02</span>  <span class="c-prop">DISPLAY</span>      <span class="c-bad">display: block</span>
+<span class="c-sel">03</span>  <span class="c-prop">MARGIN</span>       <span class="c-bad">gap: 150px</span>
+<span class="c-sel">04</span>  <span class="c-prop">PADDING</span>      <span class="c-bad">padding: 4px</span>
+<span class="c-sel">05</span>  <span class="c-prop">FLEXBOX</span>      <span class="c-bad">justify-content</span>
+<span class="c-sel">06</span>  <span class="c-prop">POSITION</span>     <span class="c-bad">rotate(45deg)</span>
+<span class="c-sel">07</span>  <span class="c-prop">GRID</span>         <span class="c-bad">repeat(1, 1fr)</span>
+
+<span class="c-note">/* every one repairs the real site */</span></pre>
+        <div class="wf-window__foot">
+          <span>Live preview · sandboxed</span>
+          <span><b>{{ challenge.minutes }}:00</b> maximum</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== STATS ===================== -->
+    <section class="wf-stats">
+      <div class="wf-card wf-stat wf-stat--purple">
+        <div class="wf-stat__label">Time</div>
+        <div class="wf-stat__value">{{ challenge.minutes }} <small>MIN</small></div>
+      </div>
+      <div class="wf-card wf-stat wf-stat--blue">
+        <div class="wf-stat__label">Difficulty</div>
+        <div class="wf-stat__value">{{ challenge.difficulty|upper }}</div>
+      </div>
+      <div class="wf-card wf-stat wf-stat--pink">
+        <div class="wf-stat__label">Mode</div>
+        <div class="wf-stat__value">{{ challenge.mode|upper }}</div>
+      </div>
+      <div class="wf-card wf-stat wf-stat--yellow">
+        <div class="wf-stat__label">CSS repairs</div>
+        <div class="wf-stat__value">{{ challenge.repairs }}</div>
+      </div>
+      <div class="wf-card wf-stat wf-stat--green">
+        <div class="wf-stat__label">Live players</div>
+        <div class="wf-stat__value" data-presence data-state="connecting">
+          <span data-presence-count>–</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CHALLENGE CARD ================= -->
+    <section class="wf-section" id="round">
+      <div class="wf-card wf-round">
+        <div class="wf-round__body">
+          <span class="wf-round__no">{{ challenge.label }}</span>
+          <h2 class="wf-round__title">{{ challenge.site }}</h2>
+          <p class="wf-round__text">
+            A finished {{ challenge.tagline }} with a wrecked stylesheet. The header collapsed,
+            the headline shrank to body size, the deploy console fell over, the feature grid
+            forgot how to grid and the mobile breakpoint does the opposite of what it should.
+          </p>
+
+          <p class="wf-round__note">
+            You never write CSS. Each repair component you collect on the course applies a
+            real slice of the fix, and the live preview beside the track rebuilds itself as
+            you drive. Collect all <b>{{ challenge.repairs }}</b> and cross the line.
+          </p>
+
+          <ul class="wf-round__meta">
+            <li><span>Time</span><b>{{ challenge.minutes }} min max</b></li>
+            <li><span>Difficulty</span><b>{{ challenge.difficulty }}</b></li>
+            <li><span>Repairs</span><b>{{ challenge.repairs }}</b></li>
+            <li><span>Course</span><b>{{ challenge.kilometres }} km</b></li>
+          </ul>
+
+          <div class="wf-cta-row">
+            {% if request.user.is_authenticated %}
+              <a class="wf-btn wf-btn--primary" href="/start/">Enter the race →</a>
+            {% else %}
+              <a class="wf-btn wf-btn--primary" href="/signup/">Start challenge →</a>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="wf-round__art" aria-hidden="true">
+          <div class="wf-mock">
+            <div class="wf-mock__bar"><span></span><span></span><span></span></div>
+            <div class="wf-mock__nav"><i></i><i></i><i></i></div>
+            <div class="wf-mock__hero"></div>
+            <div class="wf-mock__grid"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+          <span class="wf-mock__stamp">BROKEN</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================== WHAT YOU FIX ================== -->
+    <section class="wf-section" id="fix">
+      <h2 class="wf-section__title">What you'll fix</h2>
+      <p class="wf-section__sub">
+        {{ challenge.repairs }} CSS repair components, one per section of the course, every
+        one of them visible in the live preview the moment you collect it.
+      </p>
+
+      <div class="wf-tiles">
+        <div class="wf-card wf-tile wf-tile--purple">
+          <span class="wf-tile__icon">nav</span>
+          <h3>Navigation</h3>
+          <p>Put the brand, the menu and the buttons back on one line.</p>
+        </div>
+        <div class="wf-card wf-tile wf-tile--blue">
+          <span class="wf-tile__icon">hero</span>
+          <h3>Hero</h3>
+          <p>Restore the headline size, the two-column split and the console that fell over.</p>
+        </div>
+        <div class="wf-card wf-tile wf-tile--cyan">
+          <span class="wf-tile__icon">grid</span>
+          <h3>Grid</h3>
+          <p>Get the six feature cards back into their intended three-column layout.</p>
+        </div>
+        <div class="wf-card wf-tile wf-tile--pink">
+          <span class="wf-tile__icon">gap</span>
+          <h3>Spacing</h3>
+          <p>Gaps wrong in both directions — some enormous, some missing entirely.</p>
+        </div>
+        <div class="wf-card wf-tile wf-tile--orange">
+          <span class="wf-tile__icon">@media</span>
+          <h3>Responsive</h3>
+          <p>One media query is doing the exact opposite of what a phone needs.</p>
+        </div>
+        <div class="wf-card wf-tile wf-tile--green">
+          <span class="wf-tile__icon">size</span>
+          <h3>Sizing</h3>
+          <p>Icon tiles stretched into bars, and a featured card scaled the wrong way.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= HOW IT PLAYS ================== -->
+    <section class="wf-section" id="how">
+      <h2 class="wf-section__title">How the round works</h2>
+      <p class="wf-section__sub">Three steps, no setup, nothing to install.</p>
+
+      <div class="wf-steps">
+        <div class="wf-card wf-step wf-step--1">
+          <div class="wf-step__no">01</div>
+          <h3>Enter</h3>
+          <p>Register as yourself, note the number of the PC you're at, and look at the broken {{ challenge.site }}. Your run follows you, not the machine.</p>
+        </div>
+        <div class="wf-card wf-step wf-step--2">
+          <div class="wf-step__no">02</div>
+          <h3>Race</h3>
+          <p>Drive the course. Dodge the traffic and the CSS hazards, and collect the repair component in every section.</p>
+        </div>
+        <div class="wf-card wf-step wf-step--3">
+          <div class="wf-step__no">03</div>
+          <h3>Rebuild</h3>
+          <p>Every component you pick up repairs the real site beside you. Collect all {{ challenge.repairs }} and cross the line before 00:00.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================== HOUSE RULES ================== -->
+    <section class="wf-section">
+      <h2 class="wf-section__title">House rules</h2>
+      <p class="wf-section__sub">Everything you need is on screen.</p>
+
+      <div class="wf-card">
+        <ul class="wf-rules">
+          <li>You are <b>repairing</b> a finished page — you never build {{ challenge.site }} from scratch.</li>
+          <li><b>You never write CSS.</b> The race is the repair: collecting a component applies it.</li>
+          <li>Steer with <b>A</b>/<b>D</b>, accelerate with <b>W</b>, brake with <b>S</b>. Arrow keys work too.</li>
+          <li>{{ challenge.minutes }} minutes is the <b>maximum</b>. Drive well and you will finish long before it.</li>
+          <li>The clock runs on the server and starts only when the race does — refreshing will not buy you more.</li>
+          <li><b>One official attempt per participant.</b> If the clock runs out, the site stays broken.</li>
+          <li>Miss a component and it comes round again further up the course — but it costs you time.</li>
+          <li>Traffic and CSS hazards cost you speed and score, so a clean run is worth driving for.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="wf-final">
+      <h2>Ready when you are.</h2>
+      <p>{{ challenge.minutes }} minutes. {{ challenge.repairs }} CSS repairs. One broken website.</p>
+      {% if request.user.is_authenticated %}
+        <a class="wf-btn wf-btn--primary wf-btn--lg" href="/start/">Enter the race →</a>
+      {% else %}
+        <a class="wf-btn wf-btn--primary wf-btn--lg" href="/signup/">Start challenge →</a>
+      {% endif %}
+    </section>
+  </main>
+
+  <footer class="wf-foot">
+    Website Fixer — built for learning, shipped slightly broken on purpose.
+  </footer>
+</div>
+
+<script src="{% static 'js/wf-presence.js' %}" defer></script>
+</body>
+</html>

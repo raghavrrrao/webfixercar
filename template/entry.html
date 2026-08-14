@@ -1,0 +1,174 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Website Fixer — {{ challenge.site }} CSS Race</title>
+  <link rel="stylesheet" href="{% static 'css/wf-base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/wf-race.css' %}">
+</head>
+<body class="wf-body wf-race-body">
+
+<!-- ==================== BRIEFING ==================== -->
+<div class="wf-brief" id="wf-brief">
+  <header class="wf-race-topbar">
+    <a class="wf-race-brand" href="/">WF <span>Website Fixer</span></a>
+    <span class="wf-chip">{{ challenge.site }} · CSS RACE</span>
+    <a class="wf-btn wf-btn--ghost" href="{% url 'logout' %}">Exit</a>
+  </header>
+
+  <main class="wf-brief-main">
+    <section class="wf-brief-copy">
+      <p class="wf-kicker">CSS SYSTEM FAILURE</p>
+      <h1>Drive it.<br><span>Fix it.</span></h1>
+      <p class="wf-lead">
+        {{ challenge.site }}'s stylesheet is in pieces. The {{ challenge.repairs }} CSS
+        components that would repair it are scattered along a
+        {{ challenge.kilometres }} km course. Drive, dodge the traffic, collect every
+        component — each one rebuilds part of the real website — and cross the line
+        before the clock hits zero.
+      </p>
+
+      <div class="wf-rule-list">
+        <div><b>01</b><span>Drive the course and avoid traffic and CSS hazards</span></div>
+        <div><b>02</b><span>Collect all {{ challenge.repairs }} CSS repair components</span></div>
+        <div><b>03</b><span>Cross the finish line within {{ challenge.minutes }}:00</span></div>
+      </div>
+
+      <ul class="wf-brief-repairs" aria-label="The CSS repairs on the course">
+        {% for repair in repairs %}<li><b>{{ repair.label }}</b><span>{{ repair.message }}</span></li>{% endfor %}
+      </ul>
+
+      {% if race_over %}
+        <div class="wf-ended" id="wf-ended">
+          <p class="wf-ended__title">TIME'S UP!</p>
+          <p class="wf-ended__text">Your race attempt has ended and {{ challenge.site }} is still broken. You get one official attempt, so this one is final — your performance has been recorded for the organizers.</p>
+          <a class="wf-btn wf-btn--ghost" href="{% url 'logout' %}">EXIT</a>
+        </div>
+      {% else %}
+        <button class="wf-btn wf-btn--race" id="wf-start-race">
+          {% if race_active %}RESUME RACE{% else %}START RACE{% endif %} <span>→</span>
+        </button>
+        <p class="wf-start-note">
+          {% if race_active %}
+            Your attempt is already running — the clock does not restart.
+          {% else %}
+            The {{ challenge.minutes }}-minute clock starts only when the race does. You get one official attempt.
+          {% endif %}
+        </p>
+      {% endif %}
+      <p class="wf-race-error" id="wf-brief-error" hidden role="alert"></p>
+    </section>
+
+    <section class="wf-broken-card" aria-label="Broken NovaCloud preview">
+      <div class="wf-broken-head"><span>●</span><span>●</span><span>●</span><b>novacloud.local</b><em>CSS STATUS: BROKEN</em></div>
+      <iframe src="{{ broken_url }}" title="Broken NovaCloud website" sandbox></iframe>
+      <div class="wf-broken-stamp">CSS<br>ERROR</div>
+    </section>
+  </main>
+</div>
+
+<!-- ==================== RACE ==================== -->
+<div class="wf-race" id="wf-race" hidden>
+  <header class="wf-hud">
+    <div class="wf-hud__brand">WEBSITE <strong>FIXER</strong></div>
+
+    <div class="wf-hud__section">
+      <small>SECTION</small>
+      <b id="wf-hud-section">RESPONSIVE CHAOS</b>
+      <div class="wf-hud__bar"><span id="wf-hud-progress"></span></div>
+    </div>
+
+    <div class="wf-hud__stat"><small>REPAIRS</small><b id="wf-hud-repairs">0/{{ challenge.repairs }}</b></div>
+    <div class="wf-hud__stat"><small>PENALTIES</small><b id="wf-hud-penalties">0</b></div>
+    <div class="wf-hud__stat"><small>SCORE</small><b id="wf-hud-score">0</b></div>
+
+    {# Deliberately not a time. The clock is the server's: the script paints
+       this from the race state the moment it loads, so the page can never
+       claim a fresh twelve minutes the server has not agreed to. #}
+    <div class="wf-hud__timer" id="wf-hud-timer">--:--</div>
+
+    <button class="wf-hud__mute" id="wf-mute" type="button"
+            aria-pressed="false" title="Mute sound">♪</button>
+  </header>
+
+  <div class="wf-stage">
+    <!-- the track -->
+    <main class="wf-track" id="wf-track" tabindex="0" aria-label="CSS repair race">
+      <canvas id="wf-canvas"></canvas>
+
+      <div class="wf-speedo"><b id="wf-speed">0</b><small>KM/H</small></div>
+
+      <div class="wf-keys" aria-hidden="true">
+        <span><b>W</b>/<b>↑</b> accelerate</span>
+        <span><b>A</b><b>D</b>/<b>←</b><b>→</b> steer</span>
+        <span><b>S</b>/<b>↓</b> brake</span>
+      </div>
+
+      <div class="wf-objective" id="wf-objective" hidden></div>
+      <div class="wf-section-callout" id="wf-section-callout" hidden aria-live="polite">
+        <small>NEW REPAIR ZONE</small><b id="wf-section-title"></b><span id="wf-section-copy"></span>
+      </div>
+      <div class="wf-impact" id="wf-impact" hidden role="status"></div>
+      <div class="wf-toast" id="wf-toast" hidden role="status">
+        <b id="wf-toast-title">MARGIN REPAIRED</b>
+        <span id="wf-toast-text">Outer spacing restored</span>
+      </div>
+      <div class="wf-countdown" id="wf-countdown" hidden aria-live="assertive"></div>
+
+      <div class="wf-finale" id="wf-finale" hidden role="alertdialog"
+           aria-labelledby="wf-finale-title">
+        <p class="wf-finale__title" id="wf-finale-title">TIME'S UP!</p>
+        <p class="wf-finale__text" id="wf-finale-text">Your race attempt has ended.</p>
+        <div class="wf-finale__actions" id="wf-finale-actions">
+          <a class="wf-btn wf-btn--ghost" href="{% url 'logout' %}">EXIT</a>
+        </div>
+      </div>
+    </main>
+
+    <!-- the website being repaired: the other half of the game -->
+    <aside class="wf-site" aria-label="NovaCloud repair status">
+      <header class="wf-site__head">
+        <b>NOVACLOUD</b>
+        <span>CSS STATUS</span>
+        <em id="wf-site-status">0/{{ challenge.repairs }} REPAIRS</em>
+      </header>
+
+      <div class="wf-browser">
+        <div class="wf-browser__bar" aria-hidden="true">
+          <span class="wf-browser__dot"></span>
+          <span class="wf-browser__dot"></span>
+          <span class="wf-browser__dot"></span>
+          <span class="wf-browser__url" id="wf-preview-url">novacloud.local</span>
+        </div>
+        <div class="wf-site__frame">
+          <iframe id="wf-preview" title="NovaCloud, repairing live" sandbox
+                  src="{{ race_urls.preview }}"></iframe>
+          <div class="wf-site__flash" id="wf-site-flash"></div>
+          <div class="wf-site__banner" id="wf-site-banner" hidden role="status">
+            <small>CSS REPAIR FOUND</small>
+            <b id="wf-site-banner-label">FLEXBOX</b>
+            <span id="wf-site-banner-text">Flexible layout restored</span>
+          </div>
+        </div>
+      </div>
+
+      <ul class="wf-repairs" id="wf-repairs">
+        {% for repair in repairs %}
+        <li data-repair="{{ repair.id }}">
+          <i aria-hidden="true"></i>
+          <b>{{ repair.label }}</b>
+          <span>{{ repair.message }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </aside>
+  </div>
+</div>
+
+{{ race_urls|json_script:"wf-race-urls" }}
+{{ race_config|json_script:"wf-race-config" }}
+{{ state|json_script:"wf-race-state" }}
+<script src="{% static 'js/wf-race.js' %}" defer></script>
+</body>
+</html>

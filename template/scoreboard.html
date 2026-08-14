@@ -1,0 +1,64 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Live race monitor — Website Fixer</title>
+  <link rel="stylesheet" href="{% static 'css/wf-base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/wf-scoreboard.css' %}">
+</head>
+<body class="wf-body wf-sb-body">
+
+<header class="wf-sb-top">
+  <div class="wf-sb-title">
+    <span class="wf-sb-mark">WF</span>
+    <div>
+      <h1>WEBSITE FIXER <em>LIVE CHALLENGE</em></h1>
+      <p>REAL-TIME RACE MONITOR</p>
+    </div>
+  </div>
+
+  <div class="wf-sb-tally">
+    <div><small>RACING</small><b id="wf-sb-count-racing">0</b></div>
+    <div><small>COMPLETE</small><b id="wf-sb-count-complete">0</b></div>
+    <div><small>TIME'S UP</small><b id="wf-sb-count-expired">0</b></div>
+    <div><small>PARTICIPANTS</small><b id="wf-sb-count-total">0</b></div>
+  </div>
+
+  <div class="wf-sb-actions">
+    <span class="wf-sb-conn" id="wf-sb-conn" data-state="connecting">CONNECTING…</span>
+    <a class="wf-btn wf-btn--ghost" href="{% url 'scoreboard_display' %}">Projector view ↗</a>
+    <a class="wf-btn wf-btn--ghost" href="/admin/">Admin</a>
+  </div>
+</header>
+
+<main class="wf-sb-main">
+  <table class="wf-sb-table">
+    <thead>
+      <tr>
+        <th>PLAYER</th><th>PC</th><th>STATUS</th><th>TIME</th>
+        <th>REPAIRS</th><th>PEN</th><th>SCORE</th><th>SECTION</th>
+      </tr>
+    </thead>
+    {# every row is written by wf-scoreboard.js from server state #}
+    <tbody id="wf-sb-body"></tbody>
+  </table>
+
+  <p class="wf-sb-empty" id="wf-sb-empty" hidden>
+    No participants registered yet. Rows appear here the moment somebody signs up.
+  </p>
+
+  <p class="wf-sb-note">
+    Sorted for monitoring only — completed runs first, then who is still out on
+    the course. This is <strong>not</strong> a placing: the event has one overall
+    winner, chosen by comparing the completed runs.
+  </p>
+</main>
+
+{# the detail route, with a placeholder id the script swaps per row #}
+<span id="wf-sb-link" hidden data-href="{% url 'scoreboard_player' 0 %}"></span>
+
+{{ boot|json_script:"wf-scoreboard-boot" }}
+<script src="{% static 'js/wf-scoreboard.js' %}" defer></script>
+</body>
+</html>

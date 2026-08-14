@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NovaCloud — AI Powered Cloud Platform</title>
+  <meta name="description" content="NovaCloud is the AI powered cloud platform for teams who ship fast. Deploy, scale, and monitor without the ops overhead." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ============ SKIP LINK ============ -->
+  <a class="skip-link" href="#main-content">Skip to content</a>
+
+  <!-- ============ NAVIGATION ============ -->
+  <header class="site-header" id="site-header">
+    <nav class="navbar" aria-label="Primary">
+      <a href="#top" class="navbar__brand">
+        <span class="navbar__logo" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14 2L25 8V20L14 26L3 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+            <circle cx="14" cy="14" r="4" fill="currentColor"/>
+          </svg>
+        </span>
+        <span class="navbar__name">NovaCloud</span>
+      </a>
+
+      <button class="navbar__toggle" id="navToggle" aria-expanded="false" aria-controls="navMenu" aria-label="Toggle navigation menu">
+        <span class="navbar__toggle-bar"></span>
+        <span class="navbar__toggle-bar"></span>
+        <span class="navbar__toggle-bar"></span>
+      </button>
+
+      <ul class="navbar__menu" id="navMenu">
+        <li><a href="#features" class="navbar__link">Features</a></li>
+        <li><a href="#how-it-works" class="navbar__link">How it Works</a></li>
+        <li><a href="#pricing" class="navbar__link">Pricing</a></li>
+        <li><a href="#testimonials" class="navbar__link">Testimonials</a></li>
+        <li><a href="#faq" class="navbar__link">FAQ</a></li>
+      </ul>
+
+      <div class="navbar__actions">
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark and light theme" aria-pressed="false">
+          <svg class="theme-toggle__icon theme-toggle__icon--sun" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2"/>
+            <path d="M12 2V4M12 20V22M4 12H2M22 12H20M19.07 4.93L17.66 6.34M6.34 17.66L4.93 19.07M19.07 19.07L17.66 17.66M6.34 6.34L4.93 4.93" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <svg class="theme-toggle__icon theme-toggle__icon--moon" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <a href="#contact" class="btn btn--ghost navbar__cta-secondary">Log in</a>
+        <a href="#contact" class="btn btn--primary navbar__cta">Start deploying</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main-content">
+
+    <!-- ============ HERO ============ -->
+    <section class="hero" id="top">
+      <div class="hero__glow" aria-hidden="true"></div>
+      <div class="hero__grid" aria-hidden="true"></div>
+
+      <div class="container hero__container">
+        <div class="hero__content">
+          <p class="eyebrow"><span class="eyebrow__dot" aria-hidden="true"></span>Now serving 14 regions worldwide</p>
+          <h1 class="hero__title">
+            Ship infrastructure at the
+            <span class="hero__title-accent">speed of thought</span>
+          </h1>
+          <p class="hero__subtitle">
+            NovaCloud is the AI powered cloud platform that provisions, scales, and heals your infrastructure automatically — so your team can stay focused on the product, not the pipeline.
+          </p>
+          <div class="hero__actions">
+            <a href="#contact" class="btn btn--primary btn--large">Start deploying free</a>
+            <a href="#how-it-works" class="btn btn--secondary btn--large">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                <path d="M10 8L16 12L10 16V8Z" fill="currentColor"/>
+              </svg>
+              Watch a 90s demo
+            </a>
+          </div>
+          <p class="hero__note">No credit card required · Free tier includes 3 projects</p>
+        </div>
+
+        <div class="hero__panel" role="img" aria-label="NovaCloud deployment console showing a successful production deploy across fourteen regions">
+          <div class="console">
+            <div class="console__bar">
+              <span class="console__dot console__dot--red"></span>
+              <span class="console__dot console__dot--yellow"></span>
+              <span class="console__dot console__dot--green"></span>
+              <span class="console__title">nova — production</span>
+            </div>
+            <div class="console__body">
+              <p class="console__line"><span class="console__prompt">$</span> nova deploy --env=production</p>
+              <p class="console__line console__line--muted">Resolving build graph… 128 modules</p>
+              <p class="console__line console__line--success">✓ Build complete in 8.4s</p>
+              <p class="console__line console__line--success">✓ Deployed to 14 edge regions</p>
+              <p class="console__line console__line--success">✓ Health checks passed (200 OK)</p>
+              <p class="console__line"><span class="console__prompt">$</span> <span class="console__cursor" aria-hidden="true"></span></p>
+            </div>
+            <div class="console__stats">
+              <div class="console__stat">
+                <span class="console__stat-value">99.99%</span>
+                <span class="console__stat-label">uptime</span>
+              </div>
+              <div class="console__stat">
+                <span class="console__stat-value">42ms</span>
+                <span class="console__stat-label">p50 latency</span>
+              </div>
+              <div class="console__stat">
+                <span class="console__stat-value">14</span>
+                <span class="console__stat-label">regions</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TRUSTED COMPANIES ============ -->
+    <section class="trusted" aria-label="Trusted by">
+      <div class="container">
+        <p class="trusted__label">Trusted by engineering teams at</p>
+        <ul class="trusted__logos">
+          <li class="trusted__logo">Halcyon</li>
+          <li class="trusted__logo">Fernway</li>
+          <li class="trusted__logo">Orbital</li>
+          <li class="trusted__logo">Ledgerly</li>
+          <li class="trusted__logo">Marrow</li>
+          <li class="trusted__logo">Kestrel</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ STATISTICS ============ -->
+    <section class="stats" id="stats">
+      <div class="container stats__grid">
+        <div class="stat-card">
+          <span class="stat-card__value" data-count-to="12000">12,000</span>
+          <span class="stat-card__suffix">+</span>
+          <p class="stat-card__label">Deployments shipped daily</p>
+        </div>
+        <div class="stat-card">
+          <span class="stat-card__value" data-count-to="99">99</span>
+          <span class="stat-card__suffix">.99%</span>
+          <p class="stat-card__label">Platform uptime SLA</p>
+        </div>
+        <div class="stat-card">
+          <span class="stat-card__value" data-count-to="14">14</span>
+          <span class="stat-card__suffix"></span>
+          <p class="stat-card__label">Global edge regions</p>
+        </div>
+        <div class="stat-card">
+          <span class="stat-card__value" data-count-to="6">6</span>
+          <span class="stat-card__suffix">min</span>
+          <p class="stat-card__label">Average time to first deploy</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FEATURES ============ -->
+    <section class="features" id="features">
+      <div class="container">
+        <div class="section-heading">
+          <p class="eyebrow eyebrow--center"><span class="eyebrow__dot" aria-hidden="true"></span>Platform</p>
+          <h2 class="section-heading__title">Everything your infrastructure needs, nothing it doesn't</h2>
+          <p class="section-heading__subtitle">A single control plane for compute, data, and delivery — built so small teams can operate like large ones.</p>
+        </div>
+
+        <div class="features__grid">
+          <article class="feature-card">
+            <div class="feature-card__icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 17L10 11L14 15L20 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M14 9H20V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h3 class="feature-card__title">Predictive autoscaling</h3>
+            <p class="feature-card__desc">NovaCloud forecasts traffic minutes ahead and pre-warms capacity, so spikes never wait on a cold start.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-card__icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/>
+                <path d="M3 9H21" stroke="currentColor" stroke-width="2"/>
+                <path d="M7 14H10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 class="feature-card__title">One-click environments</h3>
+            <p class="feature-card__desc">Spin up a full preview environment for every pull request, torn down automatically when it merges.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-card__icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L20 6V12C20 17 16.5 20.5 12 22C7.5 20.5 4 17 4 12V6L12 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h3 class="feature-card__title">Zero-trust networking</h3>
+            <p class="feature-card__desc">Every service call is authenticated and encrypted by default — no VPNs, no shared secrets to rotate.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-card__icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 3V21H21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M7 15L11 9L14 13L20 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h3 class="feature-card__title">Live cost intelligence</h3>
+            <p class="feature-card__desc">See the dollar cost of every deploy before it ships, broken down by service and region.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-card__icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+                <path d="M12 7V12L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 class="feature-card__title">Instant rollback</h3>
+            <p class="feature-card__desc">Every deploy is a snapshot. Revert a bad release in under a second, no rebuild required.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-card__icon" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 21V14M4 10V3M12 21V12M12 8V3M20 21V16M20 12V3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="4" cy="12" r="2" fill="currentColor"/>
+                <circle cx="12" cy="10" r="2" fill="currentColor"/>
+                <circle cx="20" cy="14" r="2" fill="currentColor"/>
+              </svg>
+            </div>
+            <h3 class="feature-card__title">Granular access control</h3>
+            <p class="feature-card__desc">Scope permissions down to a single environment variable, with a full audit trail of every change.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ WHY CHOOSE US ============ -->
+    <section class="why-us" id="why-us">
+      <div class="container why-us__layout">
+        <div class="why-us__content">
+          <p class="eyebrow"><span class="eyebrow__dot" aria-hidden="true"></span>Why NovaCloud</p>
+          <h2 class="why-us__title">Built for teams who used to dread deploy day</h2>
+          <p class="why-us__subtitle">Most platforms make you choose between speed and control. NovaCloud gives you both, because the platform carries the operational weight your team used to.</p>
+
+          <ul class="why-us__list">
+            <li class="why-us__item">
+              <span class="why-us__check" aria-hidden="true">✓</span>
+              <div>
+                <h3 class="why-us__item-title">Migrate without a rewrite</h3>
+                <p class="why-us__item-desc">Point NovaCloud at your existing repo. Most teams are live in an afternoon.</p>
+              </div>
+            </li>
+            <li class="why-us__item">
+              <span class="why-us__check" aria-hidden="true">✓</span>
+              <div>
+                <h3 class="why-us__item-title">Support from engineers, not scripts</h3>
+                <p class="why-us__item-desc">Every plan includes direct Slack access to the engineer on call.</p>
+              </div>
+            </li>
+            <li class="why-us__item">
+              <span class="why-us__check" aria-hidden="true">✓</span>
+              <div>
+                <h3 class="why-us__item-title">Transparent, usage-based pricing</h3>
+                <p class="why-us__item-desc">No seat licenses. You pay for compute and bandwidth you actually use.</p>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <div class="why-us__visual">
+          <div class="orbit-card orbit-card--1">
+            <span class="orbit-card__label">Build time</span>
+            <span class="orbit-card__value">8.4s</span>
+          </div>
+          <div class="orbit-card orbit-card--2">
+            <span class="orbit-card__label">Error rate</span>
+            <span class="orbit-card__value">0.01%</span>
+          </div>
+          <div class="orbit-card orbit-card--3">
+            <span class="orbit-card__label">Cost saved</span>
+            <span class="orbit-card__value">38%</span>
+          </div>
+          <div class="orbit-core">
+            <span class="orbit-core__ring"></span>
+            <span class="orbit-core__label">NovaCloud<br />Core</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HOW IT WORKS ============ -->
+    <section class="how-it-works" id="how-it-works">
+      <div class="container">
+        <div class="section-heading">
+          <p class="eyebrow eyebrow--center"><span class="eyebrow__dot" aria-hidden="true"></span>Workflow</p>
+          <h2 class="section-heading__title">From repo to production in three steps</h2>
+          <p class="section-heading__subtitle">The same path whether it's your first deploy or your ten-thousandth.</p>
+        </div>
+
+        <ol class="steps">
+          <li class="step">
+            <span class="step__number">01</span>
+            <h3 class="step__title">Connect your repository</h3>
+            <p class="step__desc">Link GitHub, GitLab, or Bitbucket. NovaCloud detects your framework automatically.</p>
+          </li>
+          <li class="step">
+            <span class="step__number">02</span>
+            <h3 class="step__title">Set your environments</h3>
+            <p class="step__desc">Define staging and production once. Every branch gets a matching preview.</p>
+          </li>
+          <li class="step">
+            <span class="step__number">03</span>
+            <h3 class="step__title">Push and watch it ship</h3>
+            <p class="step__desc">Every push triggers a build, a health check, and a zero-downtime rollout.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ============ PRICING ============ -->
+    <section class="pricing" id="pricing">
+      <div class="container">
+        <div class="section-heading">
+          <p class="eyebrow eyebrow--center"><span class="eyebrow__dot" aria-hidden="true"></span>Pricing</p>
+          <h2 class="section-heading__title">Plans that scale with your traffic, not your headcount</h2>
+          <p class="section-heading__subtitle">Start free. Upgrade the day you actually need to.</p>
+        </div>
+
+        <div class="pricing__grid">
+          <div class="pricing-card">
+            <h3 class="pricing-card__name">Starter</h3>
+            <p class="pricing-card__desc">For side projects and early prototypes.</p>
+            <p class="pricing-card__price"><span class="pricing-card__amount">$0</span><span class="pricing-card__period">/month</span></p>
+            <ul class="pricing-card__features">
+              <li>3 projects</li>
+              <li>Community support</li>
+              <li>1 edge region</li>
+              <li>100 GB bandwidth</li>
+            </ul>
+            <a href="#contact" class="btn btn--secondary pricing-card__cta">Get started</a>
+          </div>
+
+          <div class="pricing-card pricing-card--featured">
+            <span class="pricing-card__badge">Most popular</span>
+            <h3 class="pricing-card__name">Growth</h3>
+            <p class="pricing-card__desc">For teams shipping to real users.</p>
+            <p class="pricing-card__price"><span class="pricing-card__amount">$49</span><span class="pricing-card__period">/month</span></p>
+            <ul class="pricing-card__features">
+              <li>Unlimited projects</li>
+              <li>Priority Slack support</li>
+              <li>14 edge regions</li>
+              <li>2 TB bandwidth</li>
+              <li>Preview environments</li>
+            </ul>
+            <a href="#contact" class="btn btn--primary pricing-card__cta">Start free trial</a>
+          </div>
+
+          <div class="pricing-card">
+            <h3 class="pricing-card__name">Enterprise</h3>
+            <p class="pricing-card__desc">For platforms with serious scale.</p>
+            <p class="pricing-card__price"><span class="pricing-card__amount">Custom</span></p>
+            <ul class="pricing-card__features">
+              <li>Dedicated infrastructure</li>
+              <li>24/7 engineer on call</li>
+              <li>Custom regions</li>
+              <li>SSO &amp; audit logs</li>
+            </ul>
+            <a href="#contact" class="btn btn--secondary pricing-card__cta">Talk to sales</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TESTIMONIALS ============ -->
+    <section class="testimonials" id="testimonials">
+      <div class="container">
+        <div class="section-heading">
+          <p class="eyebrow eyebrow--center"><span class="eyebrow__dot" aria-hidden="true"></span>Testimonials</p>
+          <h2 class="section-heading__title">Teams that moved off their old stack</h2>
+        </div>
+
+        <div class="testimonials__grid">
+          <figure class="testimonial-card">
+            <blockquote class="testimonial-card__quote">
+              "We cut our deploy time from 20 minutes to under 10 seconds. Our on-call rotation got quiet for the first time in two years."
+            </blockquote>
+            <figcaption class="testimonial-card__author">
+              <span class="testimonial-card__avatar" aria-hidden="true">RM</span>
+              <span>
+                <span class="testimonial-card__name">Riya Mehta</span>
+                <span class="testimonial-card__role">Head of Platform, Halcyon</span>
+              </span>
+            </figcaption>
+          </figure>
+
+          <figure class="testimonial-card">
+            <blockquote class="testimonial-card__quote">
+              "The cost dashboard alone paid for the upgrade. We found a leaking staging cluster in our first week."
+            </blockquote>
+            <figcaption class="testimonial-card__author">
+              <span class="testimonial-card__avatar" aria-hidden="true">DK</span>
+              <span>
+                <span class="testimonial-card__name">Daniel Kwon</span>
+                <span class="testimonial-card__role">CTO, Fernway</span>
+              </span>
+            </figcaption>
+          </figure>
+
+          <figure class="testimonial-card">
+            <blockquote class="testimonial-card__quote">
+              "Preview environments changed how our whole team reviews code. Every PR is a real, running app."
+            </blockquote>
+            <figcaption class="testimonial-card__author">
+              <span class="testimonial-card__avatar" aria-hidden="true">SA</span>
+              <span>
+                <span class="testimonial-card__name">Sofia Alvarez</span>
+                <span class="testimonial-card__role">Engineering Lead, Orbital</span>
+              </span>
+            </figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FAQ ============ -->
+    <section class="faq" id="faq">
+      <div class="container container--narrow">
+        <div class="section-heading">
+          <p class="eyebrow eyebrow--center"><span class="eyebrow__dot" aria-hidden="true"></span>FAQ</p>
+          <h2 class="section-heading__title">Questions engineers actually ask</h2>
+        </div>
+
+        <div class="faq__list">
+          <div class="faq-item">
+            <button class="faq-item__question" aria-expanded="false">
+              How is NovaCloud different from a standard PaaS?
+              <span class="faq-item__icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-item__answer">
+              <p>Most platforms give you compute. NovaCloud adds a prediction layer on top that pre-scales before traffic arrives and a cost layer that shows the price of every deploy before it goes live.</p>
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-item__question" aria-expanded="false">
+              Can I migrate an existing production app?
+              <span class="faq-item__icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-item__answer">
+              <p>Yes. Connect your repository, and NovaCloud detects your framework and build settings automatically. Most migrations take under an afternoon with zero code changes.</p>
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-item__question" aria-expanded="false">
+              What happens if a deploy fails a health check?
+              <span class="faq-item__icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-item__answer">
+              <p>Traffic never shifts to the new version. NovaCloud keeps serving the last healthy release and flags the failed deploy in your dashboard and Slack channel.</p>
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-item__question" aria-expanded="false">
+              Do you offer a self-hosted option?
+              <span class="faq-item__icon" aria-hidden="true">+</span>
+            </button>
+            <div class="faq-item__answer">
+              <p>Enterprise plans support dedicated infrastructure in your own cloud account, with the same control plane and support SLAs as our managed offering.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CONTACT CTA ============ -->
+    <section class="contact-cta" id="contact">
+      <div class="container contact-cta__inner">
+        <h2 class="contact-cta__title">Your next deploy could be ten seconds away</h2>
+        <p class="contact-cta__subtitle">Connect a repository and see your first environment go live before your coffee gets cold.</p>
+        <div class="contact-cta__actions">
+          <a href="#top" class="btn btn--primary btn--large">Start deploying free</a>
+          <a href="#top" class="btn btn--ghost btn--large">Talk to sales</a>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============ FOOTER ============ -->
+  <footer class="site-footer">
+    <div class="container footer__grid">
+      <div class="footer__brand">
+        <a href="#top" class="navbar__brand footer__logo">
+          <span class="navbar__logo" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M14 2L25 8V20L14 26L3 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              <circle cx="14" cy="14" r="4" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="navbar__name">NovaCloud</span>
+        </a>
+        <p class="footer__tagline">AI Powered Cloud Platform</p>
+      </div>
+
+      <div class="footer__col">
+        <h3 class="footer__heading">Product</h3>
+        <ul class="footer__links">
+          <li><a href="#features">Features</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+          <li><a href="#how-it-works">How it works</a></li>
+        </ul>
+      </div>
+
+      <div class="footer__col">
+        <h3 class="footer__heading">Company</h3>
+        <ul class="footer__links">
+          <li><a href="#testimonials">Customers</a></li>
+          <li><a href="#faq">FAQ</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ul>
+      </div>
+
+      <div class="footer__col">
+        <h3 class="footer__heading">Legal</h3>
+        <ul class="footer__links">
+          <li><a href="#">Privacy policy</a></li>
+          <li><a href="#">Terms of service</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="container footer__bottom">
+      <p>&copy; 2026 NovaCloud, Inc. All rights reserved.</p>
+      <div class="footer__socials">
+        <a href="#" aria-label="NovaCloud on X">X</a>
+        <a href="#" aria-label="NovaCloud on GitHub">GitHub</a>
+        <a href="#" aria-label="NovaCloud on LinkedIn">LinkedIn</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

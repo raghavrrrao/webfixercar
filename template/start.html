@@ -1,0 +1,56 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Starting the engine — Website Fixer</title>
+  <link rel="stylesheet" href="{% static 'css/wf-base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/wf-auth.css' %}">
+</head>
+<body class="wf-body">
+
+<div class="wf-auth">
+  <div class="wf-card wf-auth__card wf-launch">
+    <span class="wf-badge wf-badge--accent">{{ challenge.label }} · {{ challenge.site }}</span>
+
+    <h1 class="wf-launch__title">Loading the broken site…</h1>
+    <p class="wf-launch__text" id="wf-launch-line">$ fetching novacloud/index.html</p>
+
+    <div class="wf-launch__track">
+      <div class="wf-launch__fill" id="wf-launch-fill"></div>
+    </div>
+
+    <p class="wf-launch__note">
+      Your {{ challenge.minutes }} minute race clock starts only when the countdown ends.
+    </p>
+    <noscript>
+      <p class="wf-launch__note"><a href="/home/">Continue to the race →</a></p>
+    </noscript>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var lines = [
+      '$ fetching novacloud/index.html',
+      '$ loading the broken NovaCloud website',
+      '$ mapping the CSS repair route',
+      '$ repair route ready'
+    ];
+    var fill = document.getElementById('wf-launch-fill');
+    var line = document.getElementById('wf-launch-line');
+    var progress = 0;
+
+    var timer = setInterval(function () {
+      progress += 2;
+      fill.style.width = progress + '%';
+      line.textContent = lines[Math.min(lines.length - 1, Math.floor(progress / 26))];
+      if (progress >= 100) {
+        clearInterval(timer);
+        window.location.href = '/home/';
+      }
+    }, 34);
+  }());
+</script>
+</body>
+</html>

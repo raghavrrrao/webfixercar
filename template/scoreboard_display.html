@@ -1,0 +1,51 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Live race — Website Fixer</title>
+  <link rel="stylesheet" href="{% static 'css/wf-base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/wf-scoreboard.css' %}">
+</head>
+<body class="wf-body wf-sb-body wf-sb-body--display">
+
+<header class="wf-sb-top wf-sb-top--display">
+  <div class="wf-sb-title">
+    <span class="wf-sb-mark">WF</span>
+    <div>
+      <h1>WEBSITE FIXER <em>LIVE RACE</em></h1>
+      <p>{{ challenge.site }} · {{ challenge.repairs }} CSS REPAIRS · {{ challenge.minutes }} MINUTES</p>
+    </div>
+  </div>
+  <div class="wf-sb-tally">
+    <div><small>RACING</small><b id="wf-sb-count-racing">0</b></div>
+    <div><small>COMPLETE</small><b id="wf-sb-count-complete">0</b></div>
+    <div><small>TIME'S UP</small><b id="wf-sb-count-expired">0</b></div>
+    <div><small>TOTAL</small><b id="wf-sb-count-total">0</b></div>
+  </div>
+  <span class="wf-sb-conn" id="wf-sb-conn" data-state="connecting">CONNECTING…</span>
+</header>
+
+<main class="wf-sb-stage">
+  <section class="wf-sb-board">
+    <div class="wf-sb-grid wf-sb-grid--head">
+      <div>PLAYER</div><div>PC</div><div>STATUS</div><div>TIME</div>
+      <div>REPAIRS</div><div>PEN</div><div>SCORE</div><div>SECTION</div>
+    </div>
+    <div class="wf-sb-grid-body" id="wf-sb-body"></div>
+    <p class="wf-sb-empty" id="wf-sb-empty" hidden>Waiting for the first participant…</p>
+  </section>
+
+  <aside class="wf-sb-side">
+    <div class="wf-sb-spot" id="wf-sb-spotlight" hidden></div>
+    <div class="wf-sb-feedwrap">
+      <h2>LIVE FEED</h2>
+      <ul class="wf-sb-feed" id="wf-sb-feed"></ul>
+    </div>
+  </aside>
+</main>
+
+{{ boot|json_script:"wf-scoreboard-boot" }}
+<script src="{% static 'js/wf-scoreboard.js' %}" defer></script>
+</body>
+</html>

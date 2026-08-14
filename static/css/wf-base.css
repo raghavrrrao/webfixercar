@@ -1,0 +1,266 @@
+/* ==========================================================================
+   Website Fixer -- game shell design system.
+
+   Everything here belongs to the GAME UI and is namespaced `wf-`.
+   The website the player repairs never sees these rules: it is rendered
+   inside a sandboxed iframe, which is its own document with its own CSS.
+
+   Direction: colourful, playful, restrained. Flat accents, 1px borders,
+   real typography, quiet shadows. No neon, no glow, no animated gradients.
+   NovaCloud -- the site being repaired -- is a calm professional SaaS page;
+   these two systems must stay visibly different.
+   ========================================================================== */
+
+:root {
+  /* palette */
+  --wf-primary: #6d5dfb;
+  --wf-primary-dark: #5a4ae8;
+  --wf-blue: #4f7cff;
+  --wf-pink: #f06ca8;
+  --wf-yellow: #f5b942;
+  --wf-green: #35b779;
+
+  /* surfaces (dark shell, so the light NovaCloud preview reads as separate) */
+  --wf-bg: #171827;
+  --wf-bg-soft: #1c1d2e;
+  --wf-surface: #1f2133;
+  --wf-surface-2: #272a3e;
+  --wf-line: #32354c;
+  --wf-line-soft: #282b3e;
+
+  /* type */
+  --wf-text: #f7f7fb;
+  --wf-muted: #9ea2b6;
+  --wf-dim: #6b6f80;
+
+  --wf-accent: var(--wf-primary);
+  --wf-accent-soft: rgba(109, 93, 251, 0.14);
+  --wf-ok: var(--wf-green);
+  --wf-ok-soft: rgba(53, 183, 121, 0.13);
+  --wf-danger: #e5646d;
+  --wf-danger-soft: rgba(229, 100, 109, 0.13);
+
+  --wf-radius: 14px;
+  --wf-radius-sm: 9px;
+  --wf-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --wf-shadow-lift: 0 8px 20px rgba(0, 0, 0, 0.28);
+
+  --wf-sans: "Segoe UI", Inter, system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  --wf-mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* `hidden` must actually hide.
+ *
+ * The browser hides [hidden] from its own user-agent stylesheet, and *any*
+ * author `display` beats a user-agent rule whatever the specificity. So a
+ * panel that is `display: flex` in here stays on screen with `hidden` set,
+ * which is how the race screen and its TIME'S UP overlay once appeared over
+ * the briefing before a race had even started. This one line is what keeps
+ * the attribute meaning what the JavaScript thinks it means. */
+[hidden] { display: none !important; }
+
+html, body { height: 100%; }
+
+body.wf-body {
+  margin: 0;
+  background: var(--wf-bg);
+  color: var(--wf-text);
+  font-family: var(--wf-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wf-mono { font-family: var(--wf-mono); }
+
+a { color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--wf-primary);
+  outline-offset: 2px;
+}
+
+/* ---------- buttons ---------- */
+
+.wf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: 1px solid var(--wf-line);
+  border-radius: var(--wf-radius-sm);
+  background: var(--wf-surface-2);
+  color: var(--wf-text);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.wf-btn:hover:not(:disabled) { background: #2f3249; border-color: #3d4159; }
+.wf-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.wf-btn--primary {
+  background: var(--wf-primary);
+  border-color: var(--wf-primary);
+  color: #ffffff;
+}
+.wf-btn--primary:hover:not(:disabled) {
+  background: var(--wf-primary-dark);
+  border-color: var(--wf-primary-dark);
+}
+
+.wf-btn--ok {
+  background: var(--wf-green);
+  border-color: var(--wf-green);
+  color: #06251a;
+}
+.wf-btn--ok:hover:not(:disabled) { background: #2da368; border-color: #2da368; }
+
+.wf-btn--ghost { background: transparent; }
+.wf-btn--ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.04); }
+
+.wf-btn--lg { padding: 14px 26px; font-size: 16px; }
+.wf-btn--sm { padding: 7px 13px; font-size: 13px; }
+.wf-btn--block { width: 100%; }
+
+/* ---------- brand ---------- */
+
+.wf-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.wf-brand__mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 10px;
+  background: var(--wf-primary);
+  color: #ffffff;
+  font-family: var(--wf-mono);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.wf-brand__mark--sm { width: 28px; height: 28px; border-radius: 8px; font-size: 11px; }
+
+.wf-brand__sub {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--wf-dim);
+}
+
+/* ---------- surfaces ---------- */
+
+.wf-card {
+  background: var(--wf-surface);
+  border: 1px solid var(--wf-line-soft);
+  border-radius: var(--wf-radius);
+}
+
+.wf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border: 1px solid var(--wf-line);
+  border-radius: 999px;
+  background: var(--wf-bg-soft);
+  color: var(--wf-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.wf-badge--accent {
+  color: #c9c2ff;
+  border-color: rgba(109, 93, 251, 0.4);
+  background: var(--wf-accent-soft);
+}
+
+/* a small flat label used in bars and heads */
+.wf-chip {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--wf-accent-soft);
+  color: #c9c2ff;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ---------- live player count ---------- */
+
+.wf-presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 13px;
+  border: 1px solid var(--wf-line);
+  border-radius: 999px;
+  background: var(--wf-bg-soft);
+  font-size: 13px;
+  color: var(--wf-muted);
+  white-space: nowrap;
+}
+
+.wf-presence__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--wf-dim);
+  flex: none;
+}
+
+.wf-presence[data-state="live"] .wf-presence__dot {
+  background: var(--wf-green);
+  animation: wf-pulse 2.6s ease-in-out infinite;
+}
+
+.wf-presence[data-state="offline"] .wf-presence__dot { background: var(--wf-danger); }
+
+.wf-presence__count {
+  font-family: var(--wf-mono);
+  font-weight: 700;
+  color: var(--wf-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- motion (deliberately minimal) ---------- */
+
+@keyframes wf-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+@keyframes wf-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.wf-rise { animation: wf-rise 0.4s ease both; }
+.wf-rise--2 { animation-delay: 0.07s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

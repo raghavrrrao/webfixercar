@@ -1,0 +1,93 @@
+/* Website Fixer -- login / signup / launch screens */
+
+.wf-auth {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background: var(--wf-bg);
+}
+
+.wf-auth__card { width: min(440px, 100%); padding: 30px; }
+
+.wf-auth__brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; text-decoration: none; }
+
+.wf-auth__title { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.01em; }
+.wf-auth__sub { margin: 0 0 22px; color: var(--wf-muted); font-size: 14px; }
+
+.wf-field { margin-bottom: 16px; }
+
+.wf-field label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--wf-dim);
+}
+
+.wf-input {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--wf-line);
+  border-radius: var(--wf-radius-sm);
+  background: #131426;
+  color: var(--wf-text);
+  font-family: var(--wf-mono);
+  font-size: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wf-input::placeholder { color: #5b60a0; }
+.wf-input:focus { outline: none; border-color: var(--wf-primary); box-shadow: 0 0 0 3px var(--wf-accent-soft); }
+
+.wf-error {
+  margin-bottom: 16px;
+  padding: 10px 13px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: var(--wf-radius-sm);
+  background: var(--wf-danger-soft);
+  color: #fecaca;
+  font-size: 13.5px;
+}
+
+.wf-auth__foot { margin-top: 18px; text-align: center; font-size: 13px; color: var(--wf-dim); }
+.wf-auth__foot a { color: var(--wf-primary); text-decoration: none; font-weight: 600; }
+.wf-auth__foot a:hover { text-decoration: underline; }
+
+/* ---------- launch screen ---------- */
+
+.wf-launch { text-align: center; }
+
+.wf-launch .wf-badge { margin-bottom: 18px; }
+
+.wf-launch__title {
+  margin: 0 0 8px;
+  font-size: clamp(26px, 4vw, 38px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.wf-launch__text { margin: 0 0 26px; color: var(--wf-muted); font-family: var(--wf-mono); font-size: 13px; }
+
+.wf-launch__track {
+  width: min(340px, 100%);
+  height: 8px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: var(--wf-surface-2);
+  border: 1px solid var(--wf-line);
+  overflow: hidden;
+}
+
+.wf-launch__fill {
+  height: 100%;
+  width: 0;
+  background: var(--wf-primary);
+  transition: width 0.12s linear;
+}
+
+.wf-launch__note { margin-top: 20px; font-size: 12.5px; color: var(--wf-dim); }
+
+.wf-hint{display:block;margin-top:6px;color:var(--wf-dim,#6b6f80);font-size:.75rem;line-height:1.45}

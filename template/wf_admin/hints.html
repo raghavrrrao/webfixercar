@@ -1,0 +1,59 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h1>Hint usage — {{ submission.pc_no }}</h1>
+
+<p>
+  <strong>Total hints used: {{ submission.hints_used }}</strong> of a possible
+  {{ max_hints }}, across {{ submission.objectives_hinted }} objective{{ submission.objectives_hinted|pluralize }}.
+  Hints are informational; they do not affect eligibility.
+</p>
+
+<p>
+  <a class="button" href="{% url 'admin:first_finalsubmission_design' submission.pk %}">View final design</a>
+  <a class="button" href="{% url 'admin:first_finalsubmission_css' submission.pk %}">View CSS</a>
+  <a class="button" href="{% url 'admin:first_finalsubmission_changelist' %}">Back to submissions</a>
+</p>
+
+<h2>By objective</h2>
+{% if matrix %}
+<table>
+  <thead>
+    <tr>
+      <th>Objective</th>
+      {% for level in levels %}<th>H{{ level }}</th>{% endfor %}
+      <th>Used</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in matrix %}
+      <tr>
+        <td>{{ row.title }} <code>{{ row.objective }}</code></td>
+        {% for taken in row.levels %}<td>{% if taken %}&#10003;{% else %}&nbsp;{% endif %}</td>{% endfor %}
+        <td>{{ row.count }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>This participant did not reveal any hints.</p>
+{% endif %}
+
+<h2>Chronological</h2>
+{% if reveals %}
+<table>
+  <thead><tr><th>Time</th><th>Objective</th><th>Hint level</th></tr></thead>
+  <tbody>
+    {% for reveal in reveals %}
+      <tr>
+        <td>{{ reveal.revealed_at }}</td>
+        <td><code>{{ reveal.objective }}</code></td>
+        <td>Hint {{ reveal.level }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Nothing to show.</p>
+{% endif %}
+{% endblock %}
