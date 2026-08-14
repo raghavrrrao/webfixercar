@@ -4,9 +4,10 @@ Render cannot answer `createsuperuser` prompts, so deployment runs this
 instead. It is safe to run on every deploy: if the account already exists the
 command leaves it alone and exits 0.
 
-The login field is the PC number -- `USERNAME_FIELD = "pc_no"` -- so the value
-typed into Django's "Username" box is `admin123`. There is no email anywhere
-in this model.
+The login field is the participant name -- `USERNAME_FIELD = "username"` --
+so the value typed into Django's "Username" box is `admin123`. The PC number
+is metadata and several accounts may share one. There is no email anywhere in
+this model.
 """
 
 import os
@@ -30,20 +31,22 @@ class Command(BaseCommand):
         username = os.environ.get('WF_ADMIN_USERNAME', DEFAULT_USERNAME).strip()
         password = os.environ.get('WF_ADMIN_PASSWORD', DEFAULT_PASSWORD)
 
-        existing = User.objects.filter(pc_no=pc_no).first()
+        # Looked up by the login field. PC numbers repeat across participants,
+        # so they cannot select a single account any more.
+        existing = User.objects.filter(username=username).first()
         if existing:
             # Never overwrite a password that may have been changed on purpose.
             if not existing.is_admin:
                 existing.is_admin = True
                 existing.save(update_fields=['is_admin'])
-                self.stdout.write(f'Granted admin rights to existing {pc_no!r}.')
+                self.stdout.write(f'Granted admin rights to existing {username!r}.')
             else:
-                self.stdout.write(f'Admin {pc_no!r} already exists; nothing to do.')
+                self.stdout.write(f'Admin {username!r} already exists; nothing to do.')
             return
 
         User.objects.create_superuser(
             username=username, pc_no=pc_no, password=password,
         )
         self.stdout.write(self.style.SUCCESS(
-            f'Created admin {pc_no!r}. Log in at /admin/ with that as the username.'
+            f'Created admin {username!r}. Log in at /admin/ with that as the username.'
         ))

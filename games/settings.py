@@ -168,7 +168,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = "first.User"
 
 AUTHENTICATION_BACKENDS = [
-    "first.backends.PCNoBackend",   # custom backend
+    "first.backends.ParticipantBackend",   # sign in as the participant
     "django.contrib.auth.backends.ModelBackend",  # keep default
 ]
 

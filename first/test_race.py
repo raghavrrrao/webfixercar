@@ -76,11 +76,17 @@ class RaceMixin:
             'broken': reverse('api_broken_preview'),
         }
 
-    def make_player(self, pc_no, password='pw-123456'):
-        """A signed-in participant who has *not* started a race."""
-        user = User.objects.create_user(username=pc_no, pc_no=pc_no, password=password)
+    def make_player(self, name, password='pw-123456', pc_no=None):
+        """A signed-in participant who has *not* started a race.
+
+        `name` is the participant — the identity everything hangs off. `pc_no`
+        is which machine they are sitting at, and defaults to the name only so
+        the existing tests stay readable; several participants may share one.
+        """
+        user = User.objects.create_user(
+            username=name, pc_no=pc_no or name, password=password)
         client = Client()
-        client.force_login(user, backend='first.backends.PCNoBackend')
+        client.force_login(user, backend='first.backends.ParticipantBackend')
         return user, client
 
     def start_race(self, client, user):
@@ -140,9 +146,9 @@ class RaceMixin:
         user.refresh_from_db()
         return response
 
-    def full_race(self, pc_no, collisions=0, seconds=None):
+    def full_race(self, name, collisions=0, seconds=None, pc_no=None):
         """Start, drive the whole course, finish. The happy path, end to end."""
-        user, client = self.make_player(pc_no)
+        user, client = self.make_player(name, pc_no=pc_no)
         self.start_race(client, user)
         self.drive_course(client, user, collisions=collisions)
         response = self.cross_finish(client, user, seconds)
@@ -258,7 +264,7 @@ class RaceTimerTests(RaceMixin, TestCase):
         self.at(self.user, 600)
 
         second_tab = Client()
-        second_tab.force_login(self.user, backend='first.backends.PCNoBackend')
+        second_tab.force_login(self.user, backend='first.backends.ParticipantBackend')
         data = second_tab.post(self.urls()['start'], {}).json()
 
         self.assertTrue(data['resumed'])
@@ -338,7 +344,7 @@ class OneAttemptTests(RaceMixin, TestCase):
         self.at(user, 300)
         client.get(reverse('logout'))
 
-        client.force_login(user, backend='first.backends.PCNoBackend')
+        client.force_login(user, backend='first.backends.ParticipantBackend')
         data = client.post(self.urls()['start'], {}).json()
 
         self.assertTrue(data['resumed'])
@@ -981,7 +987,7 @@ class RaceSecurityTests(RaceMixin, TestCase):
     def test_the_write_endpoints_require_a_csrf_token(self):
         user, _client = self.make_player('PC-SEC2')
         strict = Client(enforce_csrf_checks=True)
-        strict.force_login(user, backend='first.backends.PCNoBackend')
+        strict.force_login(user, backend='first.backends.ParticipantBackend')
 
         for name in ('start', 'progress', 'complete'):
             self.assertEqual(strict.post(self.urls()[name], {}).status_code, 403, name)
@@ -1044,31 +1050,51 @@ class AuthenticationTests(RaceMixin, TestCase):
         self.assertTrue(User.objects.filter(pc_no='PC-AUTH1').exists())
         self.assertIsNone(User.objects.get(pc_no='PC-AUTH1').race_started_at)
 
-    def test_a_duplicate_pc_number_is_refused(self):
-        User.objects.create_user(username='First', pc_no='PC-AUTH2', password='pw-123456')
+    def test_a_duplicate_participant_name_is_refused(self):
+        """The participant is the identity, so the name is what must be unique."""
+        User.objects.create_user(username='Rahul', pc_no='PC-AUTH2', password='pw-123456')
         client = Client()
         response = client.post(reverse('signup'), {
-            'username': 'Second', 'pc_no': 'PC-AUTH2', 'password': 'pw-123456'})
+            'username': 'Rahul', 'pc_no': 'PC-AUTH9', 'password': 'pw-123456'})
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('already registered', response.content.decode())
-        self.assertEqual(User.objects.filter(pc_no='PC-AUTH2').count(), 1)
+        self.assertEqual(User.objects.filter(username='Rahul').count(), 1)
+
+    def test_a_garbled_pc_number_is_refused(self):
+        client = Client()
+        response = client.post(reverse('signup'), {
+            'username': 'Nita', 'pc_no': 'x' * 40, 'password': 'pw-123456'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('PC number looks wrong', response.content.decode())
+        self.assertFalse(User.objects.filter(username='Nita').exists())
 
     def test_log_in_log_out_and_log_back_in(self):
         User.objects.create_user(username='Ada', pc_no='PC-AUTH3', password='pw-123456')
         client = Client()
 
         self.assertEqual(
-            client.post(reverse('login'), {'pc_no': 'PC-AUTH3', 'password': 'wrong'}
+            client.post(reverse('login'), {'username': 'Ada', 'password': 'wrong'}
                         ).status_code, 200)
         self.assertNotIn('_auth_user_id', client.session)
 
         self.assertRedirects(
-            client.post(reverse('login'), {'pc_no': 'PC-AUTH3', 'password': 'pw-123456'}),
+            client.post(reverse('login'), {'username': 'Ada', 'password': 'pw-123456'}),
             reverse('start'))
         self.assertIn('_auth_user_id', client.session)
 
         self.assertRedirects(client.get(reverse('logout')), reverse('login'))
+        self.assertNotIn('_auth_user_id', client.session)
+
+    def test_the_pc_number_cannot_be_used_to_sign_in(self):
+        """Several people share PC-14, so it cannot select an account."""
+        User.objects.create_user(username='Ada', pc_no='PC-AUTH4', password='pw-123456')
+        client = Client()
+
+        response = client.post(reverse('login'),
+                               {'username': 'PC-AUTH4', 'password': 'pw-123456'})
+        self.assertEqual(response.status_code, 200)
         self.assertNotIn('_auth_user_id', client.session)
 
     def test_the_game_pages_require_a_signed_in_participant(self):
@@ -1085,6 +1111,139 @@ class AuthenticationTests(RaceMixin, TestCase):
         self.assertEqual(user.race_collisions, 2)
         self.assertEqual(user.repairs_collected, REPAIR_COUNT)
         self.assertTrue(FinalSubmission.objects.get(user=user).eligible)
+
+
+class SharedPcTests(RaceMixin, TestCase):
+    """One PC, many participants, one official attempt each.
+
+    A machine in the lab is used by person after person all day. It used to be
+    the login identity *and* carry a unique constraint, so the second person to
+    sit down at PC-14 was told "PC number already registered" — and if they had
+    got in, they would have been signing in as the first person and inheriting
+    their finished race.
+
+    The participant is the identity now. The PC number is a note about which
+    desk a run happened at.
+    """
+
+    def register(self, name, pc_no, password='pw-123456'):
+        client = Client()
+        response = client.post(reverse('signup'), {
+            'username': name, 'pc_no': pc_no, 'password': password})
+        return client, response
+
+    def test_two_participants_can_register_on_the_same_pc(self):
+        _first, first_response = self.register('Rahul', 'PC-14')
+        _second, second_response = self.register('Priya', 'PC-14')
+
+        self.assertRedirects(first_response, reverse('start'))
+        self.assertRedirects(second_response, reverse('start'))
+        self.assertEqual(User.objects.filter(pc_no='PC-14').count(), 2)
+
+    def test_a_pc_carries_a_whole_day_of_participants(self):
+        for name in ('Rahul', 'Priya', 'Arjun', 'Nita', 'Sam'):
+            _client, response = self.register(name, 'PC-14')
+            self.assertRedirects(response, reverse('start'), msg_prefix=name)
+
+        seated = User.objects.filter(pc_no='PC-14')
+        self.assertEqual(seated.count(), 5)
+        self.assertEqual(len(set(seated.values_list('username', flat=True))), 5)
+
+    def test_the_second_participant_starts_their_own_race_not_the_first_one(self):
+        rahul, rahul_client = self.make_player('Rahul', pc_no='PC-14')
+        self.start_race(rahul_client, rahul)
+        self.drive_course(rahul_client, rahul, repairs=3, collisions=2)
+
+        priya, priya_client = self.make_player('Priya', pc_no='PC-14')
+        state = priya_client.get(self.urls()['state']).json()
+
+        self.assertEqual(state['status'], RACE_NOT_STARTED)
+        self.assertEqual(state['repairs'], [])
+        self.assertEqual(state['collisions'], 0)
+        self.assertEqual(state['distance'], 0)
+
+    def test_one_participants_race_never_touches_the_others_on_that_pc(self):
+        rahul, rahul_client, _response = self.full_race('Rahul', collisions=2, pc_no='PC-14')
+        recorded = (rahul.race_status, rahul.best_score, rahul.repairs_collected,
+                    rahul.race_collisions, rahul.race_completed_at)
+
+        priya, priya_client = self.make_player('Priya', pc_no='PC-14')
+        self.start_race(priya_client, priya)
+        self.drive_course(priya_client, priya, repairs=4, collisions=1)
+
+        rahul.refresh_from_db()
+        self.assertEqual(
+            (rahul.race_status, rahul.best_score, rahul.repairs_collected,
+             rahul.race_collisions, rahul.race_completed_at), recorded)
+        self.assertEqual(priya.repairs_collected, 4)
+        self.assertEqual(priya.race_collisions, 1)
+
+    def test_a_participant_gets_one_attempt_however_many_pcs_they_try(self):
+        """The attempt belongs to the person, so moving desk changes nothing."""
+        rahul, rahul_client, _response = self.full_race('Rahul', pc_no='PC-14')
+
+        # same person, same account, a different machine
+        User.objects.filter(pk=rahul.pk).update(pc_no='PC-22')
+        moved = Client()
+        moved.force_login(rahul, backend='first.backends.ParticipantBackend')
+
+        response = moved.post(self.urls()['start'], {})
+        self.assertEqual(response.status_code, 409)
+
+        rahul.refresh_from_db()
+        self.assertEqual(rahul.race_status, RACE_COMPLETED)
+        self.assertEqual(User.objects.filter(pk=rahul.pk).count(), 1)
+
+    def test_every_run_on_a_reused_pc_is_kept_for_the_organisers(self):
+        finished, _c1, _r1 = self.full_race('Rahul', pc_no='PC-14')
+
+        timed_out, timed_out_client = self.make_player('Arjun', pc_no='PC-14')
+        self.start_race(timed_out_client, timed_out)
+        self.drive_course(timed_out_client, timed_out, repairs=4)
+        self.time_out(timed_out)
+        timed_out_client.get(self.urls()['state'])
+
+        racing, racing_client = self.make_player('Priya', pc_no='PC-14')
+        self.start_race(racing_client, racing)
+
+        on_that_pc = User.objects.filter(pc_no='PC-14')
+        self.assertEqual(on_that_pc.count(), 3)
+        self.assertEqual(
+            {u.username: u.race_status for u in on_that_pc},
+            {'Rahul': RACE_COMPLETED, 'Arjun': RACE_EXPIRED, 'Priya': RACE_ACTIVE})
+
+        # ...and both finished runs are still on record for judging
+        self.assertEqual(FinalSubmission.objects.filter(pc_no='PC-14').count(), 2)
+        self.assertTrue(FinalSubmission.objects.get(user=finished).eligible)
+        self.assertFalse(FinalSubmission.objects.get(user=timed_out).eligible)
+
+    def test_logging_out_leaves_the_pc_clean_for_the_next_participant(self):
+        rahul, rahul_client, _response = self.full_race('Rahul', pc_no='PC-14')
+        rahul_client.get(reverse('logout'))
+        self.assertNotIn('_auth_user_id', rahul_client.session)
+
+        # the same physical browser, now used by the next person
+        response = rahul_client.post(reverse('signup'), {
+            'username': 'Priya', 'pc_no': 'PC-14', 'password': 'pw-123456'})
+        self.assertRedirects(response, reverse('start'))
+
+        state = rahul_client.get(self.urls()['state']).json()
+        self.assertEqual(state['status'], RACE_NOT_STARTED)
+        self.assertEqual(state['score'], 0)
+
+        rahul.refresh_from_db()
+        self.assertEqual(rahul.race_status, RACE_COMPLETED)
+
+    def test_the_reward_follows_the_participant_not_the_pc(self):
+        """Rahul finishing does not hand Priya the fixed website."""
+        _rahul, rahul_client, _response = self.full_race('Rahul', pc_no='PC-14')
+        self.assertEqual(rahul_client.get(self.urls()['fixed']).status_code, 200)
+
+        priya, priya_client = self.make_player('Priya', pc_no='PC-14')
+        self.assertRedirects(priya_client.get(self.urls()['fixed']), self.urls()['home'])
+
+        self.start_race(priya_client, priya)
+        self.assertRedirects(priya_client.get(self.urls()['fixed']), self.urls()['home'])
 
 
 class RetiredEndpointTests(TestCase):
@@ -1104,7 +1263,7 @@ class RetiredEndpointTests(TestCase):
         user = User.objects.create_user(
             username='Tester', pc_no='PC-RETIRED', password='pw-123456')
         client = Client()
-        client.force_login(user, backend='first.backends.PCNoBackend')
+        client.force_login(user, backend='first.backends.ParticipantBackend')
 
         for path in self.RETIRED:
             self.assertEqual(client.post(path, {}).status_code, 404, path)
@@ -1137,7 +1296,7 @@ class AdminRaceDataTests(RaceMixin, TestCase):
         self.staff = User.objects.create_superuser(
             username='organiser', pc_no='PC-ORG', password='pw-123456')
         self.admin = Client()
-        self.admin.force_login(self.staff, backend='first.backends.PCNoBackend')
+        self.admin.force_login(self.staff, backend='first.backends.ParticipantBackend')
 
     def test_the_participant_list_shows_race_performance(self):
         page = self.admin.get(reverse('admin:first_user_changelist'))

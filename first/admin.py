@@ -40,17 +40,19 @@ class ParticipantAdmin(admin.ModelAdmin):
     """The people at the PCs. Deleting one here removes all their data."""
 
     list_display = (
-        'pc_no', 'username', 'status_display', 'score_display', 'race_time_display',
+        'username', 'pc_no', 'status_display', 'score_display', 'race_time_display',
         'race_obstacles', 'race_collisions', 'distance_display', 'section_display',
         'race_started_at', 'race_completed_at', 'eligible_display', 'submitted_display',
     )
     list_filter = ('is_admin', 'race_completed_at', 'race_started_at')
     search_fields = ('pc_no', 'username')
-    ordering = ('pc_no',)
+    # Newest first: a PC number repeats down the column as the day goes on,
+    # so registration order is what actually tells the runs apart.
+    ordering = ('-registered_at', 'username')
     inlines = (HintRevealInline,)
 
     readonly_fields = (
-        'pc_no', 'username', 'registered_at', 'game_start_time', 'completed_at',
+        'username', 'pc_no', 'registered_at', 'game_start_time', 'completed_at',
         'best_score', 'race_started_at', 'race_completed_at', 'race_time_seconds',
         'race_time_display', 'race_obstacles', 'race_collisions', 'last_login',
         'score_display', 'status_display', 'expired_display', 'repairs_display',
@@ -60,7 +62,7 @@ class ParticipantAdmin(admin.ModelAdmin):
     # `password` is deliberately absent: organisers never need a participant's
     # credentials, so the hash is not rendered anywhere in this admin.
     fields = (
-        'pc_no', 'username', 'registered_at', 'status_display', 'expired_display',
+        'username', 'pc_no', 'registered_at', 'status_display', 'expired_display',
         'race_started_at', 'race_completed_at', 'race_time_display',
         'race_obstacles', 'repairs_display', 'race_collisions',
         'distance_display', 'section_display', 'score_display',
@@ -159,7 +161,7 @@ class FinalSubmissionAdmin(admin.ModelAdmin):
     """The judging table: one immutable row per finished round."""
 
     list_display = (
-        'pc_no', 'score_display', 'status', 'eligible', 'hints_used',
+        'user', 'pc_no', 'score_display', 'status', 'eligible', 'hints_used',
         'objectives_hinted', 'submitted_at', 'judging_links',
     )
     list_filter = ('eligible', 'reached_all', 'design_mode')

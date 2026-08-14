@@ -17,7 +17,8 @@
     </a>
 
     <h1 class="wf-auth__title">Claim your seat</h1>
-    <p class="wf-auth__sub">One account per PC. The 30 minute clock starts when the arena opens, not now.</p>
+    <p class="wf-auth__sub">One official attempt per participant. Your 12 minute race clock
+       starts when you press START RACE, not now.</p>
 
     {% if error %}
       <div class="wf-error" role="alert">{{ error }}</div>
@@ -27,15 +28,19 @@
       {% csrf_token %}
 
       <div class="wf-field">
-        <label for="username">Player name</label>
+        <label for="username">Your name</label>
         <input id="username" name="username" type="text" class="wf-input" required
                autocomplete="username" placeholder="How you want to be listed" autofocus />
+        <small class="wf-hint">This is you, and it is how you log back in. It has to be
+          different from everyone else's.</small>
       </div>
 
       <div class="wf-field">
         <label for="pc_no">PC number</label>
         <input id="pc_no" name="pc_no" type="text" class="wf-input" required autocomplete="off"
                placeholder="e.g. PC-14" />
+        <small class="wf-hint">The number of the computer you're sitting at. Several
+          people use the same machine during the event — that's fine.</small>
       </div>
 
       <div class="wf-field">

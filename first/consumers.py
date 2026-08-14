@@ -1,11 +1,17 @@
 """WebSocket consumer backing the live "players online" counter."""
 
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from channels.db import database_sync_to_async
 
 from .presence import (
     HEARTBEAT_INTERVAL_SECONDS,
     PRESENCE_GROUP,
     get_presence_store,
+)
+from .scoreboard import (
+    SCOREBOARD_GROUP,
+    SCOREBOARD_HEARTBEAT_SECONDS,
+    scoreboard_snapshot,
 )
 
 
@@ -52,3 +58,35 @@ class PresenceConsumer(AsyncJsonWebsocketConsumer):
             PRESENCE_GROUP,
             {'type': 'presence.count', 'count': await self.store.count()},
         )
+
+
+class ScoreboardConsumer(AsyncJsonWebsocketConsumer):
+    """Read-only, organiser-authenticated stream of committed race state."""
+
+    async def connect(self):
+        user = self.scope.get('user')
+        if not (getattr(user, 'is_authenticated', False) and
+                getattr(user, 'is_admin', False)):
+            # Do not accept then explain a protected endpoint to a participant.
+            await self.close(code=4403)
+            return
+
+        await self.channel_layer.group_add(SCOREBOARD_GROUP, self.channel_name)
+        await self.accept()
+        await self.send_json({
+            'type': 'welcome',
+            'heartbeat': SCOREBOARD_HEARTBEAT_SECONDS,
+        })
+        # A reconnect never depends on an in-memory event backlog: it begins
+        # from the current participant rows in the database.
+        await self.send_json(await database_sync_to_async(scoreboard_snapshot)())
+
+    async def disconnect(self, code):
+        await self.channel_layer.group_discard(SCOREBOARD_GROUP, self.channel_name)
+
+    async def receive_json(self, content, **kwargs):
+        if content.get('type') == 'ping':
+            await self.send_json({'type': 'pong'})
+
+    async def scoreboard_race_update(self, event):
+        await self.send_json(event['payload'])

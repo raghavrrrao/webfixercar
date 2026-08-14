@@ -17,7 +17,8 @@
     </a>
 
     <h1 class="wf-auth__title">Resume your run</h1>
-    <p class="wf-auth__sub">Sign in with the PC number you registered. Your clock keeps running.</p>
+    <p class="wf-auth__sub">Sign in with your own name. Your race and your one official
+       attempt follow you, not the machine.</p>
 
     {% if error %}
       <div class="wf-error" role="alert">{{ error }}</div>
@@ -27,9 +28,9 @@
       {% csrf_token %}
 
       <div class="wf-field">
-        <label for="pc_no">PC number</label>
-        <input id="pc_no" name="pc_no" type="text" class="wf-input" required autocomplete="off"
-               placeholder="e.g. PC-14" autofocus />
+        <label for="username">Your name</label>
+        <input id="username" name="username" type="text" class="wf-input" required
+               autocomplete="username" placeholder="The name you registered with" autofocus />
       </div>
 
       <div class="wf-field">
@@ -42,7 +43,7 @@
     </form>
 
     <div class="wf-auth__foot">
-      No account yet? <a href="/signup/">Register a PC number</a><br>
+      No account yet? <a href="/signup/">Register as a participant</a><br>
       <a href="/">← Back to home</a>
     </div>
   </div>

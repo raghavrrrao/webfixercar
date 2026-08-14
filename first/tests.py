@@ -579,6 +579,7 @@ class HintMarkupTests(TestCase):
 class EnsureAdminCommandTests(TestCase):
     """The deploy-time admin account: created once, safe to re-run forever."""
 
+    USERNAME = 'admin123'
     PC_NO = 'admin123'
     PASSWORD = 'piyush123456@'
 
@@ -588,10 +589,10 @@ class EnsureAdminCommandTests(TestCase):
         return out.getvalue()
 
     def test_it_creates_the_admin_account(self):
-        self.assertFalse(User.objects.filter(pc_no=self.PC_NO).exists())
+        self.assertFalse(User.objects.filter(username=self.USERNAME).exists())
         self.run_command()
 
-        admin = User.objects.get(pc_no=self.PC_NO)
+        admin = User.objects.get(username=self.USERNAME)
         self.assertTrue(admin.is_admin)
         self.assertTrue(admin.is_staff)
         self.assertTrue(admin.is_superuser)
@@ -600,20 +601,20 @@ class EnsureAdminCommandTests(TestCase):
 
     def test_running_it_again_changes_nothing(self):
         self.run_command()
-        original = User.objects.get(pc_no=self.PC_NO)
+        original = User.objects.get(username=self.USERNAME)
 
         for _ in range(3):
             output = self.run_command()
             self.assertIn('already exists', output)
 
-        self.assertEqual(User.objects.filter(pc_no=self.PC_NO).count(), 1)
-        again = User.objects.get(pc_no=self.PC_NO)
+        self.assertEqual(User.objects.filter(username=self.USERNAME).count(), 1)
+        again = User.objects.get(username=self.USERNAME)
         self.assertEqual(again.pk, original.pk)
         self.assertEqual(again.password, original.password)
 
     def test_it_does_not_reset_a_password_changed_later(self):
         self.run_command()
-        admin = User.objects.get(pc_no=self.PC_NO)
+        admin = User.objects.get(username=self.USERNAME)
         admin.set_password('something-else-entirely')
         admin.save(update_fields=['password'])
 
@@ -623,18 +624,19 @@ class EnsureAdminCommandTests(TestCase):
         self.assertTrue(admin.check_password('something-else-entirely'))
         self.assertFalse(admin.check_password(self.PASSWORD))
 
-    def test_the_login_field_is_the_pc_number_not_an_email(self):
+    def test_the_login_field_is_the_participant_name_not_an_email(self):
+        """The account is a person, not the machine they sat at."""
         self.run_command()
-        self.assertEqual(User.USERNAME_FIELD, 'pc_no')
+        self.assertEqual(User.USERNAME_FIELD, 'username')
         self.assertNotIn('email', [f.name for f in User._meta.get_fields()])
 
         # this is exactly what the admin login form posts
-        signed_in = self.client.login(pc_no=self.PC_NO, password=self.PASSWORD)
+        signed_in = self.client.login(username=self.USERNAME, password=self.PASSWORD)
         self.assertTrue(signed_in)
 
     def test_the_admin_account_can_reach_the_judging_screens(self):
         self.run_command()
-        self.client.login(pc_no=self.PC_NO, password=self.PASSWORD)
+        self.client.login(username=self.USERNAME, password=self.PASSWORD)
 
         for url in (reverse('admin:index'),
                     reverse('admin:first_user_changelist'),
@@ -644,14 +646,15 @@ class EnsureAdminCommandTests(TestCase):
     def test_it_creates_no_other_admin_accounts(self):
         self.run_command()
         self.assertEqual(
-            sorted(User.objects.filter(is_admin=True).values_list('pc_no', flat=True)),
-            [self.PC_NO],
+            sorted(User.objects.filter(is_admin=True).values_list('username', flat=True)),
+            [self.USERNAME],
         )
 
-    def test_it_promotes_an_existing_non_admin_with_that_pc_number(self):
-        User.objects.create_user(username='someone', pc_no=self.PC_NO, password='pw-123456')
+    def test_it_promotes_an_existing_non_admin_with_that_name(self):
+        User.objects.create_user(
+            username=self.USERNAME, pc_no='PC-1', password='pw-123456')
         output = self.run_command()
 
         self.assertIn('Granted admin rights', output)
-        self.assertTrue(User.objects.get(pc_no=self.PC_NO).is_admin)
-        self.assertEqual(User.objects.filter(pc_no=self.PC_NO).count(), 1)
+        self.assertTrue(User.objects.get(username=self.USERNAME).is_admin)
+        self.assertEqual(User.objects.filter(username=self.USERNAME).count(), 1)

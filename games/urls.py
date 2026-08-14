@@ -37,4 +37,13 @@ urlpatterns = [
 
     # The participant's own recorded entry, once the round has closed.
     path('api/final-design/', views.final_design, name='api_final_design'),
+
+    # The live event monitor. Organiser-only, read-only, and deliberately not
+    # part of any participant's flow — updates arrive over ws/scoreboard/.
+    path('scoreboard/', views.scoreboard, name='scoreboard'),
+    path('scoreboard/display/', views.scoreboard_display, name='scoreboard_display'),
+    path('scoreboard/<int:participant_id>/', views.scoreboard_player,
+         name='scoreboard_player'),
+    path('scoreboard/<int:participant_id>/site/', views.scoreboard_player_preview,
+         name='scoreboard_player_preview'),
 ]

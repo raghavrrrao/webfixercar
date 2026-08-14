@@ -1,0 +1,88 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{{ player.player }} — Website Fixer</title>
+  <link rel="stylesheet" href="{% static 'css/wf-base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/wf-scoreboard.css' %}">
+</head>
+<body class="wf-body wf-sb-body">
+
+<header class="wf-sb-top">
+  <div class="wf-sb-title">
+    <a class="wf-sb-mark" href="{% url 'scoreboard' %}">←</a>
+    <div>
+      <h1>{{ player.player }}</h1>
+      <p>PC {{ participant.pc_no }} · registered {{ participant.registered_at|date:"H:i" }}</p>
+    </div>
+  </div>
+  <div class="wf-sb-actions">
+    <a class="wf-btn wf-btn--ghost" href="{% url 'scoreboard' %}">Back to the monitor</a>
+  </div>
+</header>
+
+<main class="wf-sb-detail">
+  <section class="wf-sb-detail__stats">
+    <div class="wf-sb-stat wf-sb-stat--{{ player.state.status }}">
+      <small>STATUS</small>
+      <b>{% if player.state.status == 'completed' %}✓ COMPLETE
+         {% elif player.state.status == 'active' %}● RACING
+         {% elif player.state.status == 'expired' %}× TIME'S UP
+         {% else %}○ NOT STARTED{% endif %}</b>
+    </div>
+    <div class="wf-sb-stat"><small>TIME</small><b>{{ elapsed_display }}</b></div>
+    <div class="wf-sb-stat"><small>REPAIRS</small><b>{{ player.state.repairs }} / {{ player.state.repair_total }}</b></div>
+    <div class="wf-sb-stat"><small>PENALTIES</small><b>{{ player.state.penalties }}</b></div>
+    <div class="wf-sb-stat"><small>SCORE</small><b>{{ player.state.score }}</b></div>
+    <div class="wf-sb-stat"><small>DISTANCE</small><b>{{ player.state.distance }} m</b></div>
+    <div class="wf-sb-stat"><small>SECTION</small><b>{{ player.state.section_label }}</b></div>
+    {% if participant.race_completed_at %}
+      <div class="wf-sb-stat"><small>FINISHED AT</small><b>{{ participant.race_completed_at|date:"H:i:s" }}</b></div>
+    {% endif %}
+  </section>
+
+  <section class="wf-sb-detail__grid">
+    <div class="wf-sb-panel">
+      <h2>THEIR NOVACLOUD</h2>
+      <p class="wf-sb-panel__note">
+        {% if player.state.status == 'completed' %}
+          The site as they rebuilt it — every repair they collected, applied.
+        {% elif player.state.status == 'active' %}
+          Live: exactly the repairs the server has recorded so far.
+        {% else %}
+          Their attempt ended before the site was fixed, so it is still broken.
+        {% endif %}
+      </p>
+      <div class="wf-sb-browser">
+        <div class="wf-sb-browser__bar">
+          <span></span><span></span><span></span>
+          <em>novacloud.local</em>
+        </div>
+        <div class="wf-sb-browser__frame">
+          <iframe src="{{ preview_url }}" title="{{ player.player }}'s NovaCloud" sandbox></iframe>
+        </div>
+      </div>
+    </div>
+
+    <div class="wf-sb-panel">
+      <h2>CSS REPAIRS COLLECTED</h2>
+      <ul class="wf-sb-repairs">
+        {% for repair in repairs %}
+          <li class="{% if repair.done %}is-done{% endif %}">
+            <i aria-hidden="true"></i>
+            <b>{{ repair.label }}</b>
+            <span>{{ repair.message }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+      <p class="wf-sb-panel__note">
+        This is a monitoring view. Nothing here changes a race — use the
+        <a href="/admin/">Django admin</a> for administrative work.
+      </p>
+    </div>
+  </section>
+</main>
+
+</body>
+</html>

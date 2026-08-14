@@ -36,8 +36,19 @@ class UserManager(BaseUserManager):
 
 # Custom User Model
 class User(AbstractBaseUser):
-    username = models.CharField(max_length=100)
-    pc_no = models.CharField(max_length=50, unique=True)
+    # The participant. This is the identity everything hangs off: the race, the
+    # one official attempt, the score, the scoreboard row.
+    username = models.CharField(max_length=100, unique=True,
+                                verbose_name="participant name")
+
+    # Which physical machine in the lab they sat at — metadata, not identity.
+    #
+    # A PC is used by participant after participant all day, so this is
+    # deliberately *not* unique: PC-14 legitimately appears once per person who
+    # raced on it, and each of those runs is its own record with its own
+    # result. Making it unique is what used to force "PC number already
+    # registered" on the second participant to sit down at a machine.
+    pc_no = models.CharField(max_length=50, verbose_name="PC number")
     password = models.CharField(max_length=128)
     is_active = models.BooleanField(default=True)
     is_admin = models.BooleanField(default=False)
@@ -79,11 +90,12 @@ class User(AbstractBaseUser):
 
     objects = UserManager()
 
-    USERNAME_FIELD = "pc_no"
-    REQUIRED_FIELDS = ["username"]
+    # The participant logs in as themselves, not as the machine they borrowed.
+    USERNAME_FIELD = "username"
+    REQUIRED_FIELDS = ["pc_no"]
 
     def __str__(self):
-        return f"{self.pc_no} ({self.username})"
+        return f"{self.username} ({self.pc_no})"
 
     # -- django admin ------------------------------------------------------
 

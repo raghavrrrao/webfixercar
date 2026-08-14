@@ -1,9 +1,11 @@
 import re
+from functools import wraps
 
 from django.contrib.auth import authenticate, login, logout
+from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.clickjacking import xframe_options_sameorigin
@@ -59,6 +61,12 @@ from .models import (
     User,
 )
 from .repairs import REPAIR_CARDS, REPAIR_COUNT, repair_css, repair_index
+from .scoreboard import (
+    SCOREBOARD_HEARTBEAT_SECONDS,
+    player_payload,
+    schedule_scoreboard_event,
+    scoreboard_snapshot,
+)
 
 # Everything the templates need to name the current round in one place.
 CHALLENGE = {
@@ -250,9 +258,19 @@ def _race_state(user):
 
 
 def _settle_expired(user):
-    """Record the timeout entry the moment the server notices the deadline."""
-    if user.is_expired:
-        finalize_if_due(user)
+    """Record the timeout entry the moment the server notices the deadline.
+
+    Broadcast exactly once, on the transition. This runs on every state read
+    of an expired race, so announcing unconditionally would republish the same
+    timeout for as long as the tab stayed open; the entry existing already is
+    what tells us the scoreboard has been told.
+    """
+    if not user.is_expired:
+        return
+    already_settled = FinalSubmission.objects.filter(user=user).exists()
+    finalize_if_due(user)
+    if not already_settled:
+        schedule_scoreboard_event(user, 'race_expired')
 
 
 def race_score(elapsed, repairs, collisions):
@@ -427,6 +445,7 @@ def api_race_start(request):
         return JsonResponse({**_race_state(user), 'resumed': True})
 
     user.start_challenge()
+    schedule_scoreboard_event(user, 'race_started')
     return JsonResponse({**_race_state(user), 'resumed': False})
 
 
@@ -520,6 +539,10 @@ def api_race_progress(request):
 
     if fields:
         user.save(update_fields=fields)
+        # A collision is the more interesting half of the same report, so it
+        # is what the feed hears about when both arrive together.
+        schedule_scoreboard_event(
+            user, 'collision' if 'race_collisions' in fields else 'race_progress')
 
     repair_id = (request.POST.get('repair') or '').strip()
     if repair_id:
@@ -549,6 +572,7 @@ def _record_repair(user, repair_id):
              'error': 'That repair is still further up the course.'}, status=400)
 
     user.record_repair(repair_id)
+    schedule_scoreboard_event(user, 'repair_collected')
     return JsonResponse({
         **_race_state(user),
         'counted': True,
@@ -621,6 +645,7 @@ def api_race_complete(request):
             'objectives_hinted': 0,
         },
     )
+    schedule_scoreboard_event(user, 'race_completed')
     return JsonResponse({**_race_state(user), 'redirect': reverse('race_result')})
 
 
@@ -678,7 +703,21 @@ def final_preview(request):
 
 # ----------------------------------------------------------------- auth ----
 
+# A PC number names a machine on the floor. Kept permissive on purpose — the
+# organisers label their lab however they like — but tight enough that a
+# fat-fingered paste does not become a participant's recorded desk.
+_PC_NO = re.compile(r'^[A-Za-z0-9][A-Za-z0-9 _-]{0,19}$')
+
+AUTH_BACKEND = 'first.backends.ParticipantBackend'
+
+
 def user_signup(request):
+    """Register one participant.
+
+    The PC number is *not* checked for uniqueness. A machine is used by person
+    after person all day, so PC-14 legitimately appears once for each of them,
+    each with their own account and their own single official attempt.
+    """
     if request.user.is_authenticated:
         return redirect('start')
 
@@ -690,11 +729,19 @@ def user_signup(request):
         if not username or not pc_no or not password:
             return render(request, 'signup.html', {'error': 'All fields are required'})
 
-        if User.objects.filter(pc_no=pc_no).exists():
-            return render(request, 'signup.html', {'error': 'PC number already registered'})
+        if not _PC_NO.match(pc_no):
+            return render(request, 'signup.html', {
+                'error': 'PC number looks wrong — use the label on your machine, '
+                         'like PC-14.'})
+
+        # The participant is the identity, so *this* is what must be unique.
+        if User.objects.filter(username__iexact=username).exists():
+            return render(request, 'signup.html', {
+                'error': f'“{username}” is already registered. Add something to '
+                         f'make it yours — every participant needs their own name.'})
 
         user = User.objects.create_user(username=username, pc_no=pc_no, password=password)
-        user.backend = 'first.backends.PCNoBackend'
+        user.backend = AUTH_BACKEND
         login(request, user)
         return redirect('start')
 
@@ -702,15 +749,16 @@ def user_signup(request):
 
 
 def user_login(request):
+    """Sign in as the participant, never as the machine."""
     if request.user.is_authenticated:
         return redirect('start')
 
     if request.method == 'POST':
-        pc_no = (request.POST.get('pc_no') or '').strip()
+        username = (request.POST.get('username') or '').strip()
         password = request.POST.get('password') or ''
-        user = authenticate(request, pc_no=pc_no, password=password)
+        user = authenticate(request, username=username, password=password)
         if user:
-            user.backend = 'first.backends.PCNoBackend'
+            user.backend = AUTH_BACKEND
             login(request, user)
             return redirect('start')
         return render(request, 'login.html', {'error': 'Invalid credentials'})
@@ -721,3 +769,110 @@ def user_login(request):
 def user_logout(request):
     logout(request)
     return redirect('login')
+
+
+# ---------------------------------------------------- the live scoreboard ----
+#
+# A read-only window onto the same participant rows the race writes. Nothing
+# below mutates a race, calculates a score, or ranks anybody: the organisers
+# pick the one overall winner themselves by comparing the completed runs.
+
+
+def organiser_only(view):
+    """Server-side authorisation, reusing the flag the Django admin already uses.
+
+    `is_admin` is this project's single stored permission flag — the same one
+    behind `is_staff`/`is_superuser` and the admin login. Reusing it means the
+    organiser account that already exists is the account that can watch the
+    event, and a participant can never reach these pages by editing anything
+    the browser sends.
+    """
+    @wraps(view)
+    def guarded(request, *args, **kwargs):
+        user = request.user
+        if not user.is_authenticated:
+            return redirect('login')
+        if not user.is_admin:
+            raise PermissionDenied
+        return view(request, *args, **kwargs)
+    return guarded
+
+
+def _scoreboard_boot(mode):
+    """What the page hands the script: the socket, and a first snapshot.
+
+    Rendering the snapshot into the page means the table is already correct
+    before the WebSocket has opened — and the script replaces it with the
+    server's own snapshot the moment it connects.
+    """
+    return {
+        'mode': mode,
+        'socket': '/ws/scoreboard/',
+        'heartbeat': SCOREBOARD_HEARTBEAT_SECONDS,
+        'snapshot': scoreboard_snapshot(),
+    }
+
+
+@organiser_only
+def scoreboard(request):
+    """The organiser's monitor: every participant, live."""
+    finalize_all_due()
+    return render(request, 'scoreboard.html', {
+        'challenge': CHALLENGE,
+        'boot': _scoreboard_boot('organiser'),
+    })
+
+
+@organiser_only
+def scoreboard_display(request):
+    """The projector view: bigger, quieter, readable across a hall."""
+    finalize_all_due()
+    return render(request, 'scoreboard_display.html', {
+        'challenge': CHALLENGE,
+        'boot': _scoreboard_boot('display'),
+    })
+
+
+@organiser_only
+def scoreboard_player(request, participant_id):
+    """One participant's run, including the website they left behind."""
+    participant = get_object_or_404(User, pk=participant_id, is_admin=False)
+    _settle_expired(participant)
+    participant.refresh_from_db()
+    player = player_payload(participant)
+    elapsed = player['state']['elapsed']
+    return render(request, 'scoreboard_player.html', {
+        'challenge': CHALLENGE,
+        'participant': participant,
+        'player': player,
+        'elapsed_display': (f'{elapsed // 60:02d}:{elapsed % 60:02d}'
+                            if participant.race_started_at else '--:--'),
+        'repairs': [
+            {**card, 'done': card['id'] in participant.repair_ids}
+            for card in REPAIR_CARDS
+        ],
+        'preview_url': reverse('scoreboard_player_preview', args=[participant.pk]),
+        'socket_path': '/ws/scoreboard/',
+    })
+
+
+@organiser_only
+@xframe_options_sameorigin
+def scoreboard_player_preview(request, participant_id):
+    """NovaCloud exactly as that participant's own race left it.
+
+    Composed through the same `repair_css` the participant's own preview uses,
+    from the same recorded repairs, so this shows what they actually earned:
+    the finished site for a completed run, the broken one for a timeout, and
+    work-in-progress for a race still going.
+
+    Being organiser-only, this cannot become a way for a participant to see
+    the fixed site early — their own reward stays behind `final_preview`.
+    """
+    participant = get_object_or_404(User, pk=participant_id, is_admin=False)
+    if participant.race_status in (RACE_ACTIVE, RACE_COMPLETED):
+        collected = participant.repair_ids
+    else:
+        # Not started, or the clock beat them: the site is still broken.
+        collected = []
+    return _render_novacloud(repair_css(collected))
