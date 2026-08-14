@@ -122,18 +122,33 @@
       </div>
     </main>
 
-    <!-- the website being repaired -->
+    <!-- the website being repaired: the other half of the game -->
     <aside class="wf-site" aria-label="NovaCloud repair status">
-      <div class="wf-site__head">
-        <span class="wf-site__dot"></span>
-        <b>novacloud.local</b>
-        <em id="wf-site-status">BROKEN</em>
+      <header class="wf-site__head">
+        <b>NOVACLOUD</b>
+        <span>CSS STATUS</span>
+        <em id="wf-site-status">0/{{ challenge.repairs }} REPAIRS</em>
+      </header>
+
+      <div class="wf-browser">
+        <div class="wf-browser__bar" aria-hidden="true">
+          <span class="wf-browser__dot"></span>
+          <span class="wf-browser__dot"></span>
+          <span class="wf-browser__dot"></span>
+          <span class="wf-browser__url" id="wf-preview-url">novacloud.local</span>
+        </div>
+        <div class="wf-site__frame">
+          <iframe id="wf-preview" title="NovaCloud, repairing live" sandbox
+                  src="{{ race_urls.preview }}"></iframe>
+          <div class="wf-site__flash" id="wf-site-flash"></div>
+          <div class="wf-site__banner" id="wf-site-banner" hidden role="status">
+            <small>CSS REPAIR FOUND</small>
+            <b id="wf-site-banner-label">FLEXBOX</b>
+            <span id="wf-site-banner-text">Flexible layout restored</span>
+          </div>
+        </div>
       </div>
-      <div class="wf-site__frame">
-        <iframe id="wf-preview" title="NovaCloud, repairing live" sandbox
-                src="{{ race_urls.preview }}"></iframe>
-        <div class="wf-site__flash" id="wf-site-flash"></div>
-      </div>
+
       <ul class="wf-repairs" id="wf-repairs">
         {% for repair in repairs %}
         <li data-repair="{{ repair.id }}">

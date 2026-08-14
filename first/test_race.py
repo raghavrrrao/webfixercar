@@ -18,8 +18,11 @@ has to sit through twelve minutes.
 
 import json
 import re
+import shutil
+import subprocess
 from datetime import timedelta
 from pathlib import Path
+from unittest import skipUnless
 
 from django.conf import settings
 from django.test import Client, TestCase
@@ -1398,6 +1401,165 @@ class HiddenPanelTests(TestCase):
                             f'#{node_id} is display-ed by .{name} and nothing '
                             f'restores [hidden]: it stays on screen when the '
                             f'game hides it')
+
+
+class PlayerInputIsolationTests(TestCase):
+    """The keyboard drives the player's car and nothing else on the road.
+
+    A `blocker` used to set its target lane from `car.x` — the player's
+    lateral position, which *is* the A/D keys — so blockers visibly mirrored
+    the participant's steering. Traffic is autonomous now: every vehicle runs
+    off its own seeded timers, and `updateTrafficAI()` cannot see the player
+    at all.
+
+    Two tests, because they fail for different reasons. The static one needs
+    nothing installed and catches the coupling being reintroduced; the
+    simulation one actually runs the game and proves the behaviour.
+    """
+
+    SCRIPT = Path(settings.BASE_DIR) / 'static' / 'js' / 'wf-race.js'
+    HARNESS = Path(settings.BASE_DIR) / 'first' / 'tests_js' / 'input_isolation.mjs'
+
+    @classmethod
+    def source(cls):
+        return cls.SCRIPT.read_text(encoding='utf-8')
+
+    @staticmethod
+    def block(source, header):
+        """The body of a top-level function in the game script."""
+        start = source.index('function ' + header)
+        end = source.index('\n  }', start)
+        return source[start:end]
+
+    def test_only_the_player_reads_the_keyboard(self):
+        source = self.source()
+        readers = re.findall(r'function (\w+)[^{]*\{[^}]*\bkeys[\.\[]', source)
+        self.assertEqual(
+            sorted(set(readers)), ['steerInput', 'throttleInput'],
+            'something other than the two input helpers is reading the key state')
+
+        drive = self.block(source, 'driveCar')
+        self.assertIn('throttleInput()', drive)
+        self.assertIn('steerInput()', drive)
+
+    def test_the_traffic_ai_cannot_see_the_player(self):
+        ai = self.block(self.source(), 'updateTrafficAI')
+
+        for forbidden in ('car.', 'keys', 'steerInput', 'throttleInput'):
+            self.assertNotIn(
+                forbidden, ai,
+                f'updateTrafficAI() references {forbidden!r}: traffic must not '
+                f'read the player, or it steers with the player\'s keys')
+
+        # ...and it is genuinely an AI, not a stub
+        for expected in ('laneTimer', 'targetLane', 'braking', 'base'):
+            self.assertIn(expected, ai, expected)
+
+    @skipUnless(shutil.which('node'), 'node is not installed')
+    def test_holding_a_key_changes_the_player_and_no_traffic_vehicle(self):
+        """Runs the real game script and compares the traffic timelines."""
+        result = subprocess.run(
+            [shutil.which('node'), str(self.HARNESS), str(self.SCRIPT)],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+
+        # the same vehicles, simulated for the same frames, whatever is held
+        for key in ('trafficUnchangedBySteerLeft', 'trafficUnchangedBySteerRight',
+                    'trafficUnchangedByThrottle', 'trafficUnchangedByBraking'):
+            self.assertTrue(report[key], f'{key} is false: {report}')
+
+        # ...and the comparison is not vacuous
+        self.assertGreater(report['trafficCount'], 3)
+        self.assertTrue(report['playerSteeredLeft'])
+        self.assertTrue(report['playerSteeredRight'])
+        self.assertTrue(report['playerAccelerated'])
+        self.assertTrue(report['trafficDroveItself'],
+                        'traffic never moved, so proving it was unmoved proves nothing')
+        self.assertTrue(report['trafficChangedLanesItself'],
+                        'no vehicle changed lane on its own, so the AI is inert')
+
+    @skipUnless(shutil.which('node'), 'node is not installed')
+    def test_resuming_takes_collected_repairs_off_the_course(self):
+        """A refresh mid-race must not leave a dead chip on the road.
+
+        Only the next uncollected repair is ever drawn, so a pickup that was
+        already collected but not marked as such hides the one that is
+        actually live — and refuses to be collected itself, because it is no
+        longer next in course order.
+        """
+        result = subprocess.run(
+            [shutil.which('node'), str(self.HARNESS), str(self.SCRIPT)],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+
+        self.assertEqual(report['freshNextPickup'], 0,
+                         'a fresh race starts with the first repair on the course')
+        self.assertEqual(report['resumedNextPickup'], 3,
+                         'a race resumed with three repairs must offer the fourth')
+
+
+class TrackPresentationTests(TestCase):
+    """The visual layer the participant actually looks at.
+
+    These do not judge whether it looks good — nothing automated can — but
+    they do pin down that the parts exist and are wired to the right places,
+    so a refactor cannot quietly drop the sprites or the browser chrome.
+    """
+
+    SCRIPT = Path(settings.BASE_DIR) / 'static' / 'js' / 'wf-race.js'
+    TEMPLATE = Path(settings.BASE_DIR) / 'template' / 'entry.html'
+
+    def test_every_vehicle_type_has_a_sprite(self):
+        source = self.SCRIPT.read_text(encoding='utf-8')
+        for vehicle in ('player', 'sedan', 'hatch', 'sports', 'van', 'taxi', 'truck'):
+            self.assertRegex(source, r'\b' + vehicle + r'\s*:\s*\{', vehicle)
+        # the player has to be told apart from the traffic at a glance
+        self.assertIn('spoiler', source)
+        self.assertIn('drawCar', source)
+        for part in ('tail lights', 'rear window', 'wheels', 'ground shadow'):
+            self.assertIn(part, source, part)
+
+    def test_the_renderer_is_projected_rather_than_flat(self):
+        source = self.SCRIPT.read_text(encoding='utf-8')
+        for piece in ('scaleAt', 'roadYAt', 'screenXAt', 'CAM_HEIGHT',
+                      'DRAW_DISTANCE', 'drawSky', 'drawRoad'):
+            self.assertIn(piece, source, piece)
+
+    def test_each_section_has_its_own_hazard_and_signs(self):
+        source = self.SCRIPT.read_text(encoding='utf-8')
+        self.assertIn('SECTION_SIGNS', source)
+        self.assertIn('buildHazardSprites', source)
+        # one hazard drawing per section of the course
+        self.assertEqual(len(re.findall(r'\n    make\(\d', source)), 7)
+
+    def test_the_preview_is_a_browser_window_on_the_real_site(self):
+        markup = self.TEMPLATE.read_text(encoding='utf-8')
+        for piece in ('wf-browser__bar', 'wf-browser__url', 'wf-preview-url',
+                      'wf-site-banner', 'id="wf-preview"'):
+            self.assertIn(piece, markup, piece)
+        # it is the server-composed preview, never a picture of one
+        self.assertIn('{{ race_urls.preview }}', markup)
+        self.assertNotIn('.png', markup)
+        self.assertNotIn('.jpg', markup)
+
+    def test_the_preview_panel_is_a_third_of_the_screen(self):
+        css = (Path(settings.BASE_DIR) / 'static' / 'css' / 'wf-race.css').read_text(
+            encoding='utf-8')
+        rule = re.search(r'\.wf-site\{([^}]*)\}', css)
+        self.assertIsNotNone(rule, 'the website panel lost its sizing rule')
+        self.assertIn('36vw', rule.group(1),
+                      'the preview must stay around a third of the screen')
+
+    def test_the_countdown_still_names_the_repair_route(self):
+        source = self.SCRIPT.read_text(encoding='utf-8')
+        self.assertIn('CSS SYSTEM FAILURE', source)
+        self.assertIn('REPAIR ROUTE INITIALIZED', source)
+        # and it runs before the server is asked to start the clock
+        start = source.index('function start(')
+        self.assertLess(source.index('countdown(function', start),
+                        source.index('post(urls.start', start))
 
 
 class RaceFlowTests(RaceMixin, TestCase):
