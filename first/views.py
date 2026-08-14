@@ -8,10 +8,12 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.cache import never_cache
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
 
 from .checks import TOTAL_CHECKS, run_checks
+from .export import write_results_csv
 from .game_config import (
     CHALLENGE_HTML,
     DIFFICULTY,
@@ -251,9 +253,12 @@ def _race_state(user):
         'section': race_section(user.race_distance),
         'collisions': user.race_collisions,
         # While the race runs this is the score as it stands *right now*, so
-        # the HUD never has to do arithmetic of its own. A race that has not
+        # the HUD never has to do arithmetic of its own. Once the attempt has
+        # stopped it is the settled figure the server wrote instead: what the
+        # run scored if it finished, and zero if the clock beat it, which is
+        # what that timeout's own recorded entry says. A race that has not
         # started has not scored anything.
-        'score': (user.best_score if completed
+        'score': (user.best_score if status in (RACE_COMPLETED, RACE_EXPIRED)
                   else (race_score(elapsed, len(repairs), user.race_collisions)
                         if started else 0)),
     }
@@ -312,6 +317,7 @@ def intro(request):
     return render(request, 'intro.html', {'challenge': CHALLENGE})
 
 
+@never_cache
 def start(request):
     """Short 'booting the arena' transition between auth and the challenge."""
     if not request.user.is_authenticated:
@@ -319,6 +325,13 @@ def start(request):
     return render(request, 'start.html', {'challenge': CHALLENGE})
 
 
+# Every signed-in page below carries `no-store`, because these machines are
+# handed straight from one participant to the next. Authorisation is server
+# side and already refuses the next person, but without this the browser is
+# entitled to redraw the previous participant's race or result from its own
+# cache on a Back press, and never asks. The organiser views get the same
+# treatment for the same reason.
+@never_cache
 def home(request):
     """Broken-site briefing.
 
@@ -356,6 +369,7 @@ def home(request):
     })
 
 
+@never_cache
 def race_result(request):
     """The performance record. It never declares anybody the winner."""
     if not request.user.is_authenticated:
@@ -788,8 +802,13 @@ def organiser_only(view):
     organiser account that already exists is the account that can watch the
     event, and a participant can never reach these pages by editing anything
     the browser sends.
+
+    The guard is also where the organiser screens pick up `no-store`: an event
+    monitor left open on a shared laptop must not be redrawable from cache
+    once whoever opened it has signed out.
     """
     @wraps(view)
+    @never_cache
     def guarded(request, *args, **kwargs):
         user = request.user
         if not user.is_authenticated:
@@ -856,6 +875,26 @@ def scoreboard_player(request, participant_id):
         'preview_url': reverse('scoreboard_player_preview', args=[participant.pk]),
         'socket_path': '/ws/scoreboard/',
     })
+
+
+@organiser_only
+def scoreboard_export(request):
+    """Download every run as CSV, for judging and for the archive.
+
+    Organiser-only and read-only. It settles anyone whose clock ran out while
+    nobody was watching first, so the file an organiser downloads at the end
+    of the event is complete without anybody having to open each participant.
+
+    The columns are fixed in `first/export.py`; no credential, password hash
+    or session key is among them.
+    """
+    finalize_all_due()
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = (
+        'attachment; filename="website-fixer-results.csv"')
+    response['Cache-Control'] = 'no-store'
+    write_results_csv(response)
+    return response
 
 
 @organiser_only

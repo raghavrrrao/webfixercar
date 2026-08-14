@@ -9,6 +9,13 @@
 </head>
 <body class="wf-body wf-race-body">
 
+{# The race is the one page here that POSTs. Rendering the token guarantees
+   the csrftoken cookie exists on this page rather than trusting that the
+   login form set one earlier: without it START RACE is refused with a 403
+   the participant cannot recover from. The script reads the cookie, not
+   this input. #}
+{% csrf_token %}
+
 <!-- ==================== BRIEFING ==================== -->
 <div class="wf-brief" id="wf-brief">
   <header class="wf-race-topbar">

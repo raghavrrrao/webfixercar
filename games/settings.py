@@ -9,6 +9,7 @@ from pathlib import Path
 import os
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -19,20 +20,59 @@ def _env_bool(name, default=False):
     return os.environ.get(name, str(default)).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _env_list(name):
+    """Comma-separated environment value -> list, ignoring blanks."""
+    return [item.strip() for item in os.environ.get(name, '').split(',') if item.strip()]
+
+
+# The development key. Fine for `runserver` on a laptop; it is in the
+# repository, so it signs nothing anybody should trust.
+_DEV_SECRET_KEY = 'django-insecure-1)*yy1*vlg4_m@(3l7rl(y+yocy#@e^f)pze6=)onh^6)(-3dq'
+
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-1)*yy1*vlg4_m@(3l7rl(y+yocy#@e^f)pze6=)onh^6)(-3dq',
-)
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', '').strip() or _DEV_SECRET_KEY
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _env_bool('DJANGO_DEBUG', True)
 
-ALLOWED_HOSTS = ['*']
+# Session cookies are signed with SECRET_KEY. Shipping the published one to a
+# real event would let anybody who read the repository mint an organiser
+# session, so a production-shaped run refuses to boot without its own.
+if not DEBUG and SECRET_KEY == _DEV_SECRET_KEY:
+    raise ImproperlyConfigured(
+        'DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is off. The '
+        'development key is published in this repository and would let '
+        'anybody forge an organiser session. Generate one with:\n'
+        "  python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+    )
 
-# Render exposes the public hostname here; needed for POST/CSRF over HTTPS.
-CSRF_TRUSTED_ORIGINS = ['https://*.onrender.com']
-_render_host = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+# Which hostnames this server answers to. `DJANGO_ALLOWED_HOSTS` is a
+# comma-separated list -- on event day that is the lab machine's LAN address
+# and hostname, e.g. "192.168.1.20,fixer.local".
+#
+# The wildcard stays the default in DEBUG so `runserver` keeps working from a
+# phone on the same wifi without configuration. A production-shaped run needs
+# the list, because ALLOWED_HOSTS is what stops a poisoned Host header turning
+# into a password-reset link pointing at somebody else's server.
+ALLOWED_HOSTS = _env_list('DJANGO_ALLOWED_HOSTS')
+_render_host = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '').strip()
+if _render_host:
+    ALLOWED_HOSTS.append(_render_host)
+    ALLOWED_HOSTS.append('.onrender.com')
+if not ALLOWED_HOSTS:
+    if DEBUG:
+        ALLOWED_HOSTS = ['*']
+    else:
+        raise ImproperlyConfigured(
+            'DJANGO_ALLOWED_HOSTS must list the hostnames this server answers '
+            'to when DJANGO_DEBUG is off, e.g. '
+            'DJANGO_ALLOWED_HOSTS=192.168.1.20,fixer.local'
+        )
+
+# Origins allowed to POST. Only consulted for HTTPS requests, so a plain-HTTP
+# LAN event needs nothing here; a fest served over TLS on its own domain does.
+CSRF_TRUSTED_ORIGINS = _env_list('DJANGO_CSRF_TRUSTED_ORIGINS') or []
+CSRF_TRUSTED_ORIGINS.append('https://*.onrender.com')
 if _render_host:
     CSRF_TRUSTED_ORIGINS.append(f'https://{_render_host}')
 
@@ -85,9 +125,17 @@ WSGI_APPLICATION = 'games.wsgi.application'
 ASGI_APPLICATION = 'games.asgi.application'
 
 
-# Channel layer.
-# In-memory is correct for a single process (local dev, one Render instance).
-# Set REDIS_URL to broadcast across several instances -- see README.
+# Channel layer -- how a race event reaches the scoreboard sockets.
+#
+# In-memory is correct for a *single* process, which is what `runserver` and
+# one `daphne` worker are, and what a lab event normally runs. It is a Python
+# dictionary inside that process: a second worker has its own, so a race
+# handled by worker A would never reach a scoreboard socket held by worker B.
+#
+# Set REDIS_URL the moment there is more than one worker or instance. Nothing
+# else changes: the scoreboard is rebuilt from the database either way, so the
+# channel layer only ever carries live notifications, never state.
+# See EVENT-OPERATIONS.md.
 REDIS_URL = os.environ.get('REDIS_URL', '').strip()
 if REDIS_URL:
     CHANNEL_LAYERS = {

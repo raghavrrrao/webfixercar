@@ -28,6 +28,9 @@
   <div class="wf-sb-actions">
     <span class="wf-sb-conn" id="wf-sb-conn" data-state="connecting">CONNECTING…</span>
     <a class="wf-btn wf-btn--ghost" href="{% url 'scoreboard_display' %}">Projector view ↗</a>
+    {# Read-only: downloading the results changes no race and ends nothing. #}
+    <a class="wf-btn wf-btn--ghost" href="{% url 'scoreboard_export' %}"
+       download>Export CSV ↓</a>
     <a class="wf-btn wf-btn--ghost" href="/admin/">Admin</a>
   </div>
 </header>

@@ -286,12 +286,21 @@ the WebSocket. Daphne serves both HTTP and WS.
 
 ## Running an event
 
-Players register themselves at `/signup/` with their PC number. Accounts
-created before this version already carry a `game_start_time`, so their clock
-looks expired — clear that field in `/admin/` (or set `completed_at` back to
-empty) to hand a player a fresh 30 minutes.
+**The full operator handbook is [EVENT-OPERATIONS.md](EVENT-OPERATIONS.md)** —
+configuration, start of event, handing a PC to the next participant, the
+results export, backups, resetting, and what happens in each failure mode.
 
-`python manage.py test` runs the regression suite (36 tests). It asserts that
+Participants register themselves at `/signup/` with their own name and the PC
+number on the machine they are sitting at. Several participants share a PC
+number over the course of a day; the participant is the identity.
+
+Accounts created by the earlier CSS-editor version carry only a
+`game_start_time`. That still counts as their one official attempt, so they
+read as timed out and are not handed a fresh race. To deliberately give such
+an account a new attempt, use `reset_race` (below), which clears the legacy
+clock along with everything else.
+
+`python manage.py test` runs the regression suite. It asserts that
 the shipped page fails all 14 objectives, that both the gold standard *and* a
 graded-fixes-only submission pass all 14, that each individual fix clears
 exactly one objective and no others, that equivalent beginner answers are
@@ -476,12 +485,27 @@ mid-race, or a developer wants to play the game again — it is a shell command
 on the server, so it takes access to the machine the event runs on:
 
 ```bash
-python manage.py reset_race PC-12 --yes    # clear that participant's attempt
-python manage.py reset_race PC-TEST --new  # create a fresh test participant
+python manage.py reset_race Rahul --yes              # clear that participant's attempt
+python manage.py reset_race Tester --new --pc PC-TEST  # a fresh test participant
 ```
+
+The argument is the **participant**, because that is what an attempt belongs
+to. A PC number is accepted only when exactly one person used it: passing one
+that several participants shared lists them and refuses rather than picking a
+stranger's live race.
 
 Without `--yes` it prints the attempt it is about to destroy and refuses. There
 is deliberately no participant-facing reset, and no automatic one.
+
+The judging export is read-only and safe to run at any point:
+
+```bash
+python manage.py export_results --settle --out results.csv
+```
+
+One row per run, so three people who used PC-14 are three rows. Organisers can
+also download it from the monitor at `/scoreboard/results.csv`. It names no
+winner: the organisers compare the completed runs and pick one themselves.
 
 Note for manual testing: because an unfinished attempt expires twelve minutes
 after it starts, an account used for an earlier test will correctly show the

@@ -42,6 +42,11 @@ urlpatterns = [
     # part of any participant's flow — updates arrive over ws/scoreboard/.
     path('scoreboard/', views.scoreboard, name='scoreboard'),
     path('scoreboard/display/', views.scoreboard_display, name='scoreboard_display'),
+
+    # The judging export. Organiser-only, read-only, one row per run.
+    path('scoreboard/results.csv', views.scoreboard_export,
+         name='scoreboard_export'),
+
     path('scoreboard/<int:participant_id>/', views.scoreboard_player,
          name='scoreboard_player'),
     path('scoreboard/<int:participant_id>/site/', views.scoreboard_player_preview,

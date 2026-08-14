@@ -650,7 +650,12 @@ class ScoreboardPreviewTests(ScoreboardMixin, TestCase):
             reverse('scoreboard_player_preview', args=[user.pk]))
 
         self.assertEqual(response['X-Frame-Options'], 'SAMEORIGIN')
-        self.assertEqual(response['Cache-Control'], 'no-store')
+        # The render sets `no-store` and the organiser guard adds the rest of
+        # the never-cache directives on top, so assert the property rather
+        # than the exact string: this participant's website is never written
+        # to a disk cache on a machine the next participant will sit at.
+        self.assertIn('no-store', response['Cache-Control'])
+        self.assertIn('private', response['Cache-Control'])
         self.assertNotIn('<script', response.content.decode())
 
 

@@ -42,8 +42,14 @@ def player_payload(user):
     status = race['status']
 
     # The regular race endpoint continues to describe a completed player's
-    # wall-clock elapsed time. The scoreboard deliberately freezes terminal
-    # rows at their recorded result; this is a presentation projection only.
+    # wall-clock elapsed time, and to keep quoting a live running total for an
+    # attempt that has stopped. The scoreboard deliberately freezes terminal
+    # rows at their recorded result; this is a presentation projection only,
+    # and it never writes anything.
+    #
+    # The score is not frozen here: `_race_state` already reports the settled
+    # figure once an attempt has stopped, so the board, the player's own
+    # screen, the export and the recorded entry all quote one number.
     if status == RACE_COMPLETED:
         elapsed = user.race_time_seconds
         remaining = max(0, GAME_DURATION_SECONDS - elapsed)
