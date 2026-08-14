@@ -52,6 +52,10 @@
     timer: document.getElementById('wf-hud-timer'),
     mute: document.getElementById('wf-mute'),
     objective: document.getElementById('wf-objective'),
+    sectionCallout: document.getElementById('wf-section-callout'),
+    sectionTitle: document.getElementById('wf-section-title'),
+    sectionCopy: document.getElementById('wf-section-copy'),
+    impact: document.getElementById('wf-impact'),
     toast: document.getElementById('wf-toast'),
     toastTitle: document.getElementById('wf-toast-title'),
     toastText: document.getElementById('wf-toast-text'),
@@ -99,6 +103,15 @@
     { road: '#243542', edge: '#6fa8c4', grass: '#12222c', sky: ['#08202e', '#1d4a68'], tint: '#4bd3ff' },
     { road: '#33283c', edge: '#c07fae', grass: '#1d1528', sky: ['#25102c', '#5f2a58'], tint: '#ff79c6' },
     { road: '#28322c', edge: '#8fb877', grass: '#14201a', sky: ['#0d2016', '#2d4f2a'], tint: '#a3e635' }
+  ];
+  var SECTION_COPY = [
+    'Stabilise the breakpoint before the layout collapses.',
+    'Put the interface back into a working display flow.',
+    'Close the runaway outer spacing gap.',
+    'Restore breathing room inside every component.',
+    'Re-align the flexible layout system.',
+    'Return drifting elements to their intended position.',
+    'Rebuild the missing grid structure.'
   ];
 
   function clamp(value, low, high) {
@@ -330,6 +343,11 @@
     c.beginPath();
     c.ellipse(W / 2, H - H * 0.045, bodyW * 0.56, H * 0.045, 0, 0, 6.283);
     c.fill();
+
+    // a fine beltline and a small badge give the player car a deliberately
+    // engineered feel at close range instead of a generic coloured block.
+    c.fillStyle = 'rgba(255,255,255,.22)';
+    c.fillRect(x + bodyW * 0.12, y + bodyH * 0.48, bodyW * 0.76, Math.max(2, bodyH * 0.018));
     c.globalAlpha = 1;
 
     // wheels, poking out either side
@@ -394,11 +412,20 @@
       c.fillRect(x + bodyW * 0.12, y + bodyH * 0.5, bodyW * 0.06, bodyH * 0.1);
       c.fillRect(x + bodyW * 0.82, y + bodyH * 0.5, bodyW * 0.06, bodyH * 0.1);
     }
+    if (spec.player) {
+      c.fillStyle = '#9ff6ff';
+      c.shadowColor = '#22d3ee'; c.shadowBlur = 12;
+      roundRect(c, x + bodyW * 0.38, y + bodyH * 0.52, bodyW * 0.24, bodyH * 0.055, 3); c.fill();
+      c.shadowBlur = 0;
+      c.fillStyle = '#dffcff';
+      c.font = '800 ' + Math.max(8, W * 0.055) + 'px "IBM Plex Mono", monospace';
+      c.textAlign = 'center'; c.fillText('WF', W / 2, y + bodyH * 0.78);
+    }
   }
 
   var VEHICLES = {
     // the player: unmistakable — Website Fixer blue, light bar, spoiler, glow
-    player: { width: 0.80, length: 0.80, radius: 0.20, cabin: 0.34, spoiler: true,
+    player: { width: 0.80, length: 0.80, radius: 0.20, cabin: 0.34, spoiler: true, player: true,
               body: '#4f7dfb', light: '#8fb4ff', dark: '#1f3ba8', lights: '#ff5a6e' },
     sedan:  { width: 0.74, length: 0.80, radius: 0.17, cabin: 0.30,
               body: '#c94f63', light: '#e88596', dark: '#7d2434' },
@@ -650,6 +677,7 @@
   }
 
   var skyline = null;
+  var treeline = null;
   function buildSkyline() {
     skyline = makeSprite(1400, 200, function (c, W, H) {
       var rng = mulberry32(C.seed ^ 0x5f5f);
@@ -668,6 +696,20 @@
         }
         c.fillStyle = '#141d33';
         x += w;
+      }
+    });
+  }
+
+  /* A second, nearer parallax layer makes the roadside feel populated even
+   * on long clear stretches. It is a cached silhouette, not per-frame foliage. */
+  function buildTreeline() {
+    treeline = makeSprite(1200, 145, function (c, W, H) {
+      var rng = mulberry32(C.seed ^ 0x1d4a11);
+      for (var x = -20; x < W + 40; x += 22 + rng() * 24) {
+        var h = 28 + rng() * 76;
+        c.fillStyle = rng() > 0.35 ? '#152c32' : '#1e3940';
+        c.beginPath(); c.arc(x + 17, H - h * 0.45, h * 0.32, 0, 6.283); c.fill();
+        c.fillStyle = '#101b28'; c.fillRect(x + 14, H - h * 0.52, 6, h * 0.58);
       }
     });
   }
@@ -991,6 +1033,7 @@
     state.collisions += 1;
     paintHud();
     noise(0.24, 0.32, 320);
+    showImpact(force > 1 ? 'CSS HAZARD — SPEED REDUCED' : 'TRAFFIC IMPACT — PENALTY RECORDED');
     return true;
   }
 
@@ -1193,6 +1236,15 @@
       ctx.globalAlpha = 1;
     }
 
+    if (treeline) {
+      var nearOffset = (car.d * 0.72) % treeline.width;
+      var treeY = view.horizon - treeline.height * 0.24;
+      ctx.globalAlpha = 0.82;
+      ctx.drawImage(treeline, -nearOffset, treeY);
+      ctx.drawImage(treeline, treeline.width - nearOffset, treeY);
+      ctx.globalAlpha = 1;
+    }
+
     // the ground the road is laid on
     ctx.fillStyle = palette.grass;
     ctx.fillRect(0, view.horizon, view.w, view.h - view.horizon);
@@ -1274,6 +1326,15 @@
       var a = SEG_CACHE[n];
       ctx.fillStyle = a.road;
       quad(a.lNear, a.yNear, a.rNear, a.yNear, a.rFar, a.yFar, a.lFar, a.yFar);
+    }
+    // restrained aggregate texture: a few deterministic-looking dark bands
+    // break up the perfectly flat asphalt without obscuring lane information.
+    ctx.fillStyle = 'rgba(5,10,18,.12)';
+    for (n = 0; n < count; n += 4) {
+      var texture = SEG_CACHE[n];
+      if (texture.yNear - texture.yFar < 1) { continue; }
+      quad(texture.lNear, texture.yNear - 1, texture.rNear, texture.yNear - 1,
+           texture.rFar, texture.yFar, texture.lFar, texture.yFar);
     }
     ctx.fillStyle = 'rgba(236,242,255,.55)';            // lane markings
     for (n = 0; n < count; n++) {
@@ -1578,6 +1639,7 @@
     if (section !== painted.section) {
       painted.section = section;
       el.section.textContent = C.repairs[section].section;
+      if (running && car.d > 80) { showSection(section); }
     }
     var progress = Math.round(clamp((car.d / C.course) * 100, 0, 100) * 2) / 2;
     if (progress !== painted.progress) {
@@ -1624,7 +1686,9 @@
       items[i].classList.toggle('is-done', done);
     }
     var count = repairsDone();
-    el.siteStatus.textContent = count + '/' + C.repairs.length + ' REPAIRS';
+    var status = count === C.repairs.length ? 'READY FOR DEPLOYMENT' :
+      (count >= 4 ? 'RECOVERING' : 'CRITICAL');
+    el.siteStatus.textContent = count + '/' + C.repairs.length + ' — ' + status;
     el.siteStatus.classList.toggle('is-fixed', count >= C.repairs.length);
     if (el.previewUrl) {
       var left = C.repairs.length - count;
@@ -1653,6 +1717,29 @@
 
   var toastTimer = null;
   var bannerTimer = null;
+  var impactTimer = null;
+  var sectionTimer = null;
+  function showImpact(message) {
+    if (!el.impact) { return; }
+    el.impact.textContent = message;
+    el.impact.hidden = false;
+    el.impact.classList.remove('is-in');
+    void el.impact.offsetWidth;
+    el.impact.classList.add('is-in');
+    clearTimeout(impactTimer);
+    impactTimer = setTimeout(function () { el.impact.hidden = true; }, 850);
+  }
+  function showSection(section) {
+    if (!el.sectionCallout) { return; }
+    el.sectionTitle.textContent = C.repairs[section].section;
+    el.sectionCopy.textContent = SECTION_COPY[section] || 'Repair the next CSS system.';
+    el.sectionCallout.hidden = false;
+    el.sectionCallout.classList.remove('is-in');
+    void el.sectionCallout.offsetWidth;
+    el.sectionCallout.classList.add('is-in');
+    clearTimeout(sectionTimer);
+    sectionTimer = setTimeout(function () { el.sectionCallout.hidden = true; }, 2100);
+  }
   function showToast(card) {
     el.toastTitle.textContent = card.label + ' REPAIRED';
     el.toastText.textContent = card.message;
@@ -1882,6 +1969,7 @@
   buildPropSprites();
   buildHazardSprites();
   buildSkyline();
+  buildTreeline();
   buildCourse();
   reconcilePickups();     // a resumed race arrives with repairs already made
   booted = true;

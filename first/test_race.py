@@ -1552,6 +1552,16 @@ class TrackPresentationTests(TestCase):
         self.assertIn('36vw', rule.group(1),
                       'the preview must stay around a third of the screen')
 
+    def test_polish_feedback_is_wired_without_a_new_game_system(self):
+        """Section, impact and browser-status feedback remain renderer/UI only."""
+        source = self.SCRIPT.read_text(encoding='utf-8')
+        markup = self.TEMPLATE.read_text(encoding='utf-8')
+        for piece in ('buildTreeline', 'showSection', 'showImpact',
+                      'READY FOR DEPLOYMENT', 'CSS HAZARD'):
+            self.assertIn(piece, source, piece)
+        for node in ('wf-section-callout', 'wf-impact'):
+            self.assertIn(node, markup, node)
+
     def test_the_countdown_still_names_the_repair_route(self):
         source = self.SCRIPT.read_text(encoding='utf-8')
         self.assertIn('CSS SYSTEM FAILURE', source)
