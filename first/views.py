@@ -3,7 +3,7 @@ from functools import wraps
 
 from django.contrib.auth import authenticate, login, logout
 from django.core.exceptions import PermissionDenied
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -310,6 +310,31 @@ def _reachable_metres(elapsed):
 
 
 # ---------------------------------------------------------------- pages ----
+
+@never_cache
+def healthz(request):
+    """Is this instance able to serve the event?
+
+    The platform calls this to decide whether a deploy is live and whether to
+    keep routing traffic here, so it is deliberately the cheapest useful
+    answer: no authentication, no session, no template, and one `SELECT 1`.
+
+    It does check the database, because this application without its database
+    cannot run a race at all — every clock, score and reward is read from it,
+    and an instance that cannot reach it should not be taking participants.
+    It writes nothing.
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+            cursor.fetchone()
+    except Exception:                                   # noqa: BLE001
+        # Deliberately no detail: this endpoint is public, and a connection
+        # error can carry the database host and user.
+        return JsonResponse({'status': 'unhealthy', 'database': False},
+                            status=503)
+    return JsonResponse({'status': 'ok', 'database': True})
+
 
 def intro(request):
     """Game home page."""

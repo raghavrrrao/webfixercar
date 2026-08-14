@@ -1,8 +1,9 @@
 # Running the event
 
 Everything an organiser needs on the day, and everything that has to be
-configured before it. The game itself is documented in `README.md`; this file
-is about operating it.
+configured before it. The game itself is documented in `README.md`, and
+putting it on the internet is [DEPLOYMENT.md](DEPLOYMENT.md); this file is
+about operating it.
 
 The one rule the whole system is built on:
 
@@ -20,7 +21,8 @@ credential is committed.
 | Variable | When | What it is |
 | --- | --- | --- |
 | `DJANGO_DEBUG` | always | `false` for the event. Anything else is a development run. |
-| `DJANGO_SECRET_KEY` | **required when `DJANGO_DEBUG=false`** | Signs session cookies. The server *refuses to boot* without it, because the development key is published in this repository and would let anybody forge an organiser session. |
+| `SECRET_KEY` | **required when `DJANGO_DEBUG=false`** | Signs session cookies. The server *refuses to boot* without it, because the development key is published in this repository and would let anybody forge an organiser session. (`DJANGO_SECRET_KEY` is still accepted.) |
+| `WF_SINGLE_MACHINE` | **required for a one-box event** | Declares that this machine is running the whole event by itself, which is what permits SQLite and the in-memory channel layer with `DEBUG` off. Without it a production run insists on `DATABASE_URL` and `REDIS_URL` — see [DEPLOYMENT.md](DEPLOYMENT.md). |
 | `DJANGO_ALLOWED_HOSTS` | **required when `DJANGO_DEBUG=false`** | Comma-separated hostnames this server answers to, e.g. `192.168.1.20,fixer.local`. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | HTTPS only | Comma-separated origins allowed to POST, e.g. `https://fixer.college.edu`. Not consulted over plain HTTP. |
 | `DJANGO_SSL_REDIRECT` | HTTPS only | Defaults to on when `DEBUG` is off. Set `false` to run a production-shaped server over plain HTTP on a LAN. |
@@ -55,14 +57,16 @@ Anything else is a real finding.
 ## 2. Database
 
 **SQLite is the default and is fine for a lab event on one machine.** It is a
-single file, `db.sqlite3`, and it is the entire event.
+single file, `db.sqlite3`, and it is the entire event. A one-box event has to
+declare itself with `WF_SINGLE_MACHINE=true`, which is what permits SQLite
+with `DEBUG` off.
 
-**Do not run the event on a host with an ephemeral filesystem while using
-SQLite.** On Render's free plan the disk is wiped on every deploy and on every
-restart after idle spin-down, which destroys the file and with it every
-participant, score and reward. For a hosted event either attach a persistent
-disk or set `DATABASE_URL` to a Postgres instance (`render.yaml` has the
-commented block ready).
+**A hosted deployment must use Postgres, and the application now enforces
+that.** On a platform with an ephemeral filesystem the disk is wiped on every
+deploy and on every restart after idle spin-down, which would destroy the file
+and with it every participant, score and reward. A production run without
+`DATABASE_URL` and without `WF_SINGLE_MACHINE` refuses to start rather than
+let that happen quietly. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ### Backup
 
@@ -93,13 +97,15 @@ The scoreboard's live updates travel over a Channels layer. It carries
 notifications only — every scoreboard is rebuilt from the database on connect
 and on reconnect — so losing it degrades liveness, never correctness.
 
-**Development and a normal single-process event: `InMemoryChannelLayer`.**
+**Development and a declared single-machine event: `InMemoryChannelLayer`.**
 This is the default and needs no configuration. It is correct for `runserver`
-and for one `daphne` process.
+and for one `daphne` process, and a production run may use it only with
+`WF_SINGLE_MACHINE=true`.
 
 **More than one worker or instance: set `REDIS_URL`.** The in-memory layer is
 a dictionary inside one process, so with two workers an event handled by
-worker A never reaches a scoreboard socket held by worker B.
+worker A never reaches a scoreboard socket held by worker B. A hosted
+production run without `REDIS_URL` now refuses to start.
 
 This was measured, not assumed. Two `daphne` workers on one database, no
 `REDIS_URL`:
@@ -124,11 +130,28 @@ REDIS_URL=redis://localhost:6379/0
 Nothing else changes. `channels-redis` is already in `requirements.txt`. No
 Redis credential is committed anywhere.
 
-> **Not verified here:** the Redis-backed cross-worker path was not executed,
-> because no Redis server was available in this environment. The
-> in-memory limitation above *was* reproduced directly. To verify Redis
-> yourself, run the two-worker procedure in §9 with `REDIS_URL` set and
-> confirm the event count is greater than zero.
+The same two-worker measurement, repeated with an external channel layer
+configured, and both workers running the production settings:
+
+```
+worker A (:8501) healthy, worker B (:8502) healthy   -- one Postgres
+scoreboard socket on worker B: 101 Switching Protocols
+participant registers and races on worker A
+live race_update events reaching worker B: 3
+  race_started, race_progress, collision — all naming the participant
+  who raced on worker A, carrying that participant's live state
+```
+
+Three events crossed where the in-memory layer delivered zero.
+
+> **What that test used:** the channel-layer server was `fakeredis`'s
+> Redis-protocol TCP server, not Redis itself — no Redis build was available
+> for this machine. It is a real TCP listener speaking the real protocol, and
+> the two Daphne workers were genuinely separate OS processes using the real
+> `channels_redis` client, so it establishes that the architecture and the
+> configuration path work across processes. It is *not* evidence about Redis's
+> own implementation or about a hosted Key Value service. Re-run step 11 of
+> DEPLOYMENT.md §9 after deploying to confirm it there.
 
 ---
 

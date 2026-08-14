@@ -11,14 +11,18 @@ their place here.
 """
 
 import itertools
+import os
 import re
 from io import StringIO
+from pathlib import Path
+from unittest import mock
 
 from asgiref.sync import async_to_sync
 from channels.testing import WebsocketCommunicator
 from django.conf import settings
 from django.contrib.sessions.backends.db import SessionStore
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 
@@ -581,11 +585,15 @@ class EnsureAdminCommandTests(TestCase):
 
     USERNAME = 'admin123'
     PC_NO = 'admin123'
-    PASSWORD = 'piyush123456@'
+    # Chosen by the test, not by the command. There is deliberately no
+    # password in the source for this account to fall back on.
+    PASSWORD = 'organiser-pw-for-tests'
 
-    def run_command(self):
+    def run_command(self, password=PASSWORD, **options):
         out = StringIO()
-        call_command('ensure_admin', stdout=out)
+        if password is not None:
+            options['password'] = password
+        call_command('ensure_admin', stdout=out, **options)
         return out.getvalue()
 
     def test_it_creates_the_admin_account(self):
@@ -658,3 +666,75 @@ class EnsureAdminCommandTests(TestCase):
         self.assertIn('Granted admin rights', output)
         self.assertTrue(User.objects.get(username=self.USERNAME).is_admin)
         self.assertEqual(User.objects.filter(username=self.USERNAME).count(), 1)
+
+    # -- no published credential, ever ------------------------------------
+
+    def test_it_refuses_to_invent_an_organiser_account_on_a_deploy(self):
+        """A known admin password is worse than a failed deploy."""
+        with mock.patch.dict(os.environ, {'DJANGO_DEBUG': 'false'}, clear=False):
+            os.environ.pop('WF_ADMIN_PASSWORD', None)
+            with self.assertRaises(CommandError) as caught:
+                self.run_command(password=None)
+
+        self.assertIn('WF_ADMIN_PASSWORD', str(caught.exception))
+        self.assertFalse(User.objects.filter(username=self.USERNAME).exists())
+
+    def test_a_deploy_supplied_password_is_used_and_never_printed(self):
+        """This output is the build log."""
+        secret = 'not-in-any-log-please'
+        with mock.patch.dict(os.environ,
+                             {'DJANGO_DEBUG': 'false',
+                              'WF_ADMIN_PASSWORD': secret}, clear=False):
+            output = self.run_command(password=None)
+
+        self.assertNotIn(secret, output)
+        self.assertTrue(
+            User.objects.get(username=self.USERNAME).check_password(secret))
+
+    def test_development_invents_a_random_password_and_shows_it_once(self):
+        with mock.patch.dict(os.environ, {'DJANGO_DEBUG': 'true'}, clear=False):
+            os.environ.pop('WF_ADMIN_PASSWORD', None)
+
+            first = self.run_command(password=None)
+            self.assertIn('Generated development password', first)
+            shown = self.shown_password(first)
+            # The password it printed is the password it actually set.
+            self.assertTrue(
+                User.objects.get(username=self.USERNAME).check_password(shown))
+
+            User.objects.filter(username=self.USERNAME).delete()
+            second = self.run_command(password=None)
+
+        # Random each time, not a constant hiding behind a different name.
+        self.assertNotEqual(shown, self.shown_password(second))
+
+    @staticmethod
+    def shown_password(output):
+        """Pull the password out of the command's styled output."""
+        plain = re.sub(r'\x1b\[[0-9;]*m', '', output)
+        return re.search(r'Generated development password:\s*(\S+)',
+                         plain).group(1)
+
+    def test_no_admin_password_is_committed_anywhere_in_the_source(self):
+        """The Phase 4 finding: a working /admin/ password in the repository."""
+        root = Path(settings.BASE_DIR)
+        published = 'piyush123456@'
+        checked = 0
+        for path in list(root.glob('*.py')) + list(root.glob('*.md')) + \
+                list(root.glob('*.yaml')) + list(root.glob('*.sh')) + \
+                list((root / 'first').rglob('*.py')) + \
+                list((root / 'games').rglob('*.py')):
+            if 'test' in path.name:
+                continue
+            checked += 1
+            self.assertNotIn(published, path.read_text(encoding='utf-8'),
+                             f'{path} still carries the published password')
+        self.assertGreater(checked, 10, 'the scan found almost nothing')
+
+    def test_the_command_offers_no_default_password_to_fall_back_on(self):
+        from first.management.commands import ensure_admin as module
+        self.assertFalse(
+            [name for name in dir(module)
+             if 'PASSWORD' in name.upper() and isinstance(
+                 getattr(module, name), str)],
+            'a module-level password constant is a published credential')

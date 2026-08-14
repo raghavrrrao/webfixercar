@@ -6,6 +6,10 @@ from first import views
 urlpatterns = [
     path('admin/', admin.site.urls),
 
+    # Platform health check. Public, read-only and cheap by design — the
+    # deploy platform polls it, so it must never touch a race.
+    path('healthz/', views.healthz, name='healthz'),
+
     # Game home page
     path('', views.intro, name='intro'),
 

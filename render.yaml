@@ -1,31 +1,99 @@
-# Render blueprint. WebSockets need an ASGI server, so the web process is
-# Daphne rather than Gunicorn.
+# Render Blueprint — Website Fixer.
+#
+# Three resources, because the event needs all three:
+#
+#   web        Daphne, serving HTTP *and* WebSocket from one service. The
+#              scoreboard is a WebSocket, so this cannot be a WSGI server.
+#   postgres   the event itself. Every race, score, repair and reward lives
+#              here and nothing lives in the web process. A hosted filesystem
+#              is ephemeral, so SQLite here would be deleted on every deploy
+#              and every idle restart — settings.py refuses to boot that way.
+#   keyvalue   the Channels layer, so a race handled by one instance reaches
+#              a scoreboard socket held by another. It carries live
+#              notifications only; every scoreboard is rebuilt from Postgres
+#              on connect, so losing it degrades liveness, never correctness.
+#
+# No secret is written in this file. `generateValue` has Render invent values
+# nobody has seen, and `fromDatabase`/`fromService` wire the connection
+# strings across without them ever being typed.
+#
+# Read DEPLOYMENT.md before applying this: the free instance types have real
+# consequences for an event, in particular that free Postgres expires.
+
+databases:
+  - name: website-fixer-db
+    # Free Postgres is 1 GB and, per Render's docs, expires 30 days after
+    # creation with a 14-day grace period before deletion. That is fine for a
+    # fest that happens inside that window and nowhere near fine for anything
+    # you want to keep — see DEPLOYMENT.md before choosing.
+    plan: free
+    databaseName: website_fixer
+    user: website_fixer
+    postgresMajorVersion: "16"
+    region: oregon
+
 services:
+  # ---------------------------------------------------------- channel layer --
+  - type: keyvalue
+    name: website-fixer-kv
+    plan: free
+    region: oregon
+    # Empty list = reachable only from inside this Render workspace/region.
+    # The web service connects over the internal URL; nothing external needs
+    # to reach the channel layer, and nothing should.
+    ipAllowList: []
+    # The channel layer is a queue of live events, not a cache. Dropping keys
+    # under memory pressure would silently lose scoreboard updates, so prefer
+    # to refuse writes and let the (database-backed) reconnect fill the gap.
+    maxmemoryPolicy: noeviction
+
+  # ------------------------------------------------------------ application --
   - type: web
     name: website-fixer
     runtime: python
     plan: free
+    region: oregon
     buildCommand: "./build.sh"
+    # Daphne, because this service serves WebSockets as well as HTTP.
+    # $PORT is supplied by Render.
     startCommand: "daphne -b 0.0.0.0 -p $PORT games.asgi:application"
+    # Cheap, public, read-only: one SELECT 1 and no session. See first/views.py.
+    healthCheckPath: /healthz/
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
-      - key: DJANGO_SECRET_KEY
+
+      # Signs session cookies. Generated, never committed.
+      - key: SECRET_KEY
         generateValue: true
+
+      # Turns on every production guard in settings.py. Production is
+      # declared here, not inferred from the platform.
       - key: DJANGO_DEBUG
         value: "false"
-      # The organiser's /admin/ password. Generated rather than defaulted:
-      # the fallback in ensure_admin.py is published in this repository.
+
+      # The event. settings.py refuses to start on SQLite with DEBUG off.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: website-fixer-db
+          property: connectionString
+
+      # The Channels layer. settings.py refuses to start without it unless
+      # the deployment declares itself a single machine.
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: website-fixer-kv
+          property: connectionString
+
+      # The organiser's /admin/ password. Generated, so the account is never
+      # created with a password anybody has seen — `ensure_admin` refuses to
+      # create one at all if this is missing.
       - key: WF_ADMIN_PASSWORD
         generateValue: true
-      # Optional: attach a Postgres instance and paste its URL here.
-      # - key: DATABASE_URL
-      #   fromDatabase:
-      #     name: website-fixer-db
-      #     property: connectionString
-      # Optional: only needed when running more than one instance.
-      # - key: REDIS_URL
-      #   fromService:
-      #     type: redis
-      #     name: website-fixer-redis
-      #     property: connectionString
+
+      # ALLOWED_HOSTS and CSRF_TRUSTED_ORIGINS are derived in settings.py from
+      # RENDER_EXTERNAL_HOSTNAME, which Render sets and which is not knowable
+      # until the service exists. Set DJANGO_ALLOWED_HOSTS and
+      # DJANGO_CSRF_TRUSTED_ORIGINS in the dashboard only when adding a custom
+      # domain — see DEPLOYMENT.md.

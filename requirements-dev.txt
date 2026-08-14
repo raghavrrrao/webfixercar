@@ -1,0 +1,12 @@
+# Development and test extras. NOT installed by build.sh, so nothing here
+# ships to production.
+#
+#     pip install -r requirements.txt -r requirements-dev.txt
+#
+# PyYAML lets the test suite read render.yaml and assert the blueprint really
+# declares Postgres, the Key Value instance and the health check, and that no
+# secret was written into it. Without it those few tests skip; everything else
+# runs either way.
+-r requirements.txt
+
+PyYAML

@@ -25,14 +25,31 @@ def _env_list(name):
     return [item.strip() for item in os.environ.get(name, '').split(',') if item.strip()]
 
 
+def _env_first(*names):
+    """First non-empty value among `names`, or ''."""
+    for name in names:
+        value = os.environ.get(name, '').strip()
+        if value:
+            return value
+    return ''
+
+
 # The development key. Fine for `runserver` on a laptop; it is in the
 # repository, so it signs nothing anybody should trust.
 _DEV_SECRET_KEY = 'django-insecure-1)*yy1*vlg4_m@(3l7rl(y+yocy#@e^f)pze6=)onh^6)(-3dq'
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', '').strip() or _DEV_SECRET_KEY
+#
+# `SECRET_KEY` is the name Render's blueprint sets. `DJANGO_SECRET_KEY` is
+# accepted too so an existing deployment configured before this does not stop
+# booting when it is redeployed.
+SECRET_KEY = _env_first('SECRET_KEY', 'DJANGO_SECRET_KEY') or _DEV_SECRET_KEY
 
 # SECURITY WARNING: don't run with debug turned on in production!
+#
+# Production is declared, never guessed. Nothing here infers it from a
+# hostname, from RENDER, or from anything else the platform happens to set:
+# the deployment says what it is, and every guard below follows that.
 DEBUG = _env_bool('DJANGO_DEBUG', True)
 
 # Session cookies are signed with SECRET_KEY. Shipping the published one to a
@@ -40,9 +57,9 @@ DEBUG = _env_bool('DJANGO_DEBUG', True)
 # session, so a production-shaped run refuses to boot without its own.
 if not DEBUG and SECRET_KEY == _DEV_SECRET_KEY:
     raise ImproperlyConfigured(
-        'DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is off. The '
-        'development key is published in this repository and would let '
-        'anybody forge an organiser session. Generate one with:\n'
+        'SECRET_KEY must be set when DJANGO_DEBUG is off. The development key '
+        'is published in this repository and would let anybody forge an '
+        'organiser session. Generate one with:\n'
         "  python -c \"import secrets; print(secrets.token_urlsafe(64))\""
     )
 
@@ -125,18 +142,46 @@ WSGI_APPLICATION = 'games.wsgi.application'
 ASGI_APPLICATION = 'games.asgi.application'
 
 
+# ------------------------------------------------------- hosted vs local ----
+#
+# Two deployments are supported, and they are told apart by explicit
+# environment variables rather than by sniffing the platform:
+#
+#   HOSTED     DJANGO_DEBUG=false, DATABASE_URL (Postgres), REDIS_URL.
+#              Render, or anything shaped like it. This is the default meaning
+#              of "not DEBUG", and the guards below enforce it.
+#
+#   ONE BOX    a laptop or lab machine running the whole event by itself, on
+#              SQLite and a single Daphne process, as EVENT-OPERATIONS.md
+#              describes. That is a legitimate production run, but it has to
+#              say so out loud with WF_SINGLE_MACHINE=true, because the point
+#              of the guards is that nobody reaches Render on SQLite by
+#              accident and loses the event to an ephemeral disk.
+SINGLE_MACHINE = _env_bool('WF_SINGLE_MACHINE', False)
+
+
 # Channel layer -- how a race event reaches the scoreboard sockets.
 #
-# In-memory is correct for a *single* process, which is what `runserver` and
-# one `daphne` worker are, and what a lab event normally runs. It is a Python
-# dictionary inside that process: a second worker has its own, so a race
-# handled by worker A would never reach a scoreboard socket held by worker B.
+# In-memory is a Python dictionary inside one process. It is correct for
+# `runserver` and for a single Daphne worker, and wrong the moment there are
+# two: a race handled by worker A never reaches a scoreboard socket held by
+# worker B. Redis is what makes the fan-out cross process boundaries.
 #
-# Set REDIS_URL the moment there is more than one worker or instance. Nothing
-# else changes: the scoreboard is rebuilt from the database either way, so the
-# channel layer only ever carries live notifications, never state.
-# See EVENT-OPERATIONS.md.
+# Either way the channel layer only ever carries live *notifications*. Every
+# scoreboard is rebuilt from the database on connect and on reconnect, so
+# losing the layer degrades liveness and never correctness.
 REDIS_URL = os.environ.get('REDIS_URL', '').strip()
+
+if not DEBUG and not REDIS_URL and not SINGLE_MACHINE:
+    raise ImproperlyConfigured(
+        'REDIS_URL must be set for a hosted deployment. Without it the '
+        'channel layer lives inside one process, so a scoreboard served by a '
+        'second worker or instance never receives live race events. On Render '
+        'this comes from the Key Value instance in render.yaml.\n'
+        'If this really is one machine running the whole event by itself, '
+        'set WF_SINGLE_MACHINE=true to say so.'
+    )
+
 if REDIS_URL:
     CHANNEL_LAYERS = {
         'default': {
@@ -152,7 +197,9 @@ else:
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-# SQLite locally; DATABASE_URL (Postgres) in production.
+#
+# SQLite by default, so a fresh checkout runs with no configuration.
+# DATABASE_URL (Postgres) in production -- see the guard below.
 
 DATABASES = {
     'default': dj_database_url.config(
@@ -161,6 +208,26 @@ DATABASES = {
         conn_health_checks=True,
     )
 }
+
+# The database *is* the event: every race, score, repair and reward lives in
+# it and nothing is held in the web process. A hosted platform gives each
+# deploy a fresh, empty filesystem, so a SQLite file there is deleted on every
+# deploy and on every restart after an idle spin-down -- taking the entire
+# event with it, silently, with no error anywhere.
+#
+# So a production run refuses to start on SQLite unless it is the one-box
+# deployment above, where the file lives on a real disk somebody can back up.
+if (not DEBUG and not SINGLE_MACHINE
+        and 'sqlite' in DATABASES['default'].get('ENGINE', '')):
+    raise ImproperlyConfigured(
+        'DATABASE_URL must point at PostgreSQL for a hosted deployment. '
+        'This run fell back to SQLite, and a hosted filesystem is ephemeral: '
+        'the file — and every participant, score and result in it — is '
+        'destroyed on the next deploy or restart.\n'
+        'On Render this comes from the Postgres instance in render.yaml.\n'
+        'If this really is one machine running the whole event off a disk you '
+        'back up yourself, set WF_SINGLE_MACHINE=true to say so.'
+    )
 
 
 # Password validation
@@ -232,5 +299,9 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     # Off switch for running a production-shaped server locally over plain HTTP.
     SECURE_SSL_REDIRECT = _env_bool('DJANGO_SSL_REDIRECT', True)
+    # The platform's health check may reach the instance over plain HTTP from
+    # inside the network. Redirecting it to HTTPS would make a healthy
+    # instance look unhealthy, so this one path answers either way.
+    SECURE_REDIRECT_EXEMPT = [r'^healthz/?$']
     # HSTS is intentionally not enabled: browsers cache it for its full
     # duration, which is painful to undo while the domain is still changing.

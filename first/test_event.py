@@ -721,6 +721,26 @@ class ResultsExportAccessTests(RaceMixin, TestCase):
 class DeploymentConfigTests(TestCase):
     """The settings an event has to get right, asserted rather than assumed."""
 
+    # Every variable settings.py reads. The probe clears all of them before
+    # applying a case, so a test asserts what it configured and never what the
+    # shell that launched the suite happened to export.
+    ENV_KEYS = (
+        'SECRET_KEY', 'DJANGO_SECRET_KEY', 'DJANGO_DEBUG',
+        'DJANGO_ALLOWED_HOSTS', 'DJANGO_CSRF_TRUSTED_ORIGINS',
+        'DJANGO_SSL_REDIRECT', 'RENDER_EXTERNAL_HOSTNAME',
+        'DATABASE_URL', 'REDIS_URL', 'WF_SINGLE_MACHINE',
+    )
+
+    # What a hosted deployment actually supplies. Individual tests take this
+    # away one piece at a time to prove each guard fires on its own.
+    HOSTED = {
+        'DJANGO_DEBUG': 'false',
+        'SECRET_KEY': 'x' * 60,
+        'DJANGO_ALLOWED_HOSTS': 'fixer.onrender.com',
+        'DATABASE_URL': 'postgres://u:p@db.internal:5432/wf',
+        'REDIS_URL': 'redis://kv.internal:6379',
+    }
+
     def load_settings(self, **environ):
         """Import settings.py under a given environment, in isolation."""
         import importlib.util
@@ -733,7 +753,10 @@ class DeploymentConfigTests(TestCase):
         module = importlib.util.module_from_spec(spec)
 
         saved = dict(os.environ)
-        os.environ.update({key: str(value) for key, value in environ.items()})
+        for key in self.ENV_KEYS:
+            os.environ.pop(key, None)
+        os.environ.update({key: str(value) for key, value in environ.items()
+                           if value != ''})
         try:
             spec.loader.exec_module(module)
             return module
@@ -741,49 +764,125 @@ class DeploymentConfigTests(TestCase):
             os.environ.clear()
             os.environ.update(saved)
 
+    def hosted(self, **overrides):
+        """The hosted environment, with pieces removed or replaced."""
+        env = dict(self.HOSTED)
+        env.update(overrides)
+        return {key: value for key, value in env.items() if value is not None}
+
+    def assertRefuses(self, expect, **environ):
+        from django.core.exceptions import ImproperlyConfigured
+        with self.assertRaises(ImproperlyConfigured) as caught:
+            self.load_settings(**environ)
+        self.assertIn(expect, str(caught.exception))
+        return str(caught.exception)
+
+    # -- development ------------------------------------------------------
+
     def test_development_still_runs_with_no_configuration_at_all(self):
-        module = self.load_settings(DJANGO_DEBUG='true', DJANGO_SECRET_KEY='',
-                                    DJANGO_ALLOWED_HOSTS='',
-                                    RENDER_EXTERNAL_HOSTNAME='')
+        module = self.load_settings(DJANGO_DEBUG='true')
         self.assertTrue(module.DEBUG)
         self.assertEqual(module.ALLOWED_HOSTS, ['*'])
+        self.assertIn('sqlite', module.DATABASES['default']['ENGINE'])
+        self.assertEqual(module.CHANNEL_LAYERS['default']['BACKEND'],
+                         'channels.layers.InMemoryChannelLayer')
+
+    # -- the secret key ---------------------------------------------------
 
     def test_production_refuses_the_published_secret_key(self):
-        from django.core.exceptions import ImproperlyConfigured
-        with self.assertRaises(ImproperlyConfigured) as caught:
-            self.load_settings(DJANGO_DEBUG='false', DJANGO_SECRET_KEY='',
-                               DJANGO_ALLOWED_HOSTS='fixer.local',
-                               RENDER_EXTERNAL_HOSTNAME='')
-        self.assertIn('DJANGO_SECRET_KEY', str(caught.exception))
+        self.assertRefuses('SECRET_KEY', **self.hosted(SECRET_KEY=None))
+
+    def test_the_secret_key_comes_from_either_accepted_name(self):
+        """`SECRET_KEY` is what the blueprint sets; the older name still works."""
+        by_new = self.load_settings(**self.hosted(SECRET_KEY='n' * 60))
+        self.assertEqual(by_new.SECRET_KEY, 'n' * 60)
+
+        by_old = self.load_settings(
+            **self.hosted(SECRET_KEY=None, DJANGO_SECRET_KEY='o' * 60))
+        self.assertEqual(by_old.SECRET_KEY, 'o' * 60)
+
+    # -- hosts ------------------------------------------------------------
 
     def test_production_refuses_to_answer_to_any_hostname(self):
-        from django.core.exceptions import ImproperlyConfigured
-        with self.assertRaises(ImproperlyConfigured) as caught:
-            self.load_settings(DJANGO_DEBUG='false', DJANGO_SECRET_KEY='x' * 60,
-                               DJANGO_ALLOWED_HOSTS='',
-                               RENDER_EXTERNAL_HOSTNAME='')
-        self.assertIn('DJANGO_ALLOWED_HOSTS', str(caught.exception))
+        self.assertRefuses('DJANGO_ALLOWED_HOSTS',
+                           **self.hosted(DJANGO_ALLOWED_HOSTS=None))
+
+    def test_the_render_hostname_alone_is_enough_to_boot(self):
+        """It is not knowable until the service exists, so it is not committed."""
+        module = self.load_settings(**self.hosted(
+            DJANGO_ALLOWED_HOSTS=None,
+            RENDER_EXTERNAL_HOSTNAME='website-fixer.onrender.com'))
+        self.assertIn('website-fixer.onrender.com', module.ALLOWED_HOSTS)
+        self.assertIn('https://website-fixer.onrender.com',
+                      module.CSRF_TRUSTED_ORIGINS)
+        self.assertNotIn('*', module.ALLOWED_HOSTS)
 
     def test_a_configured_production_run_boots(self):
-        module = self.load_settings(
-            DJANGO_DEBUG='false', DJANGO_SECRET_KEY='x' * 60,
-            DJANGO_ALLOWED_HOSTS='192.168.1.20, fixer.local',
-            RENDER_EXTERNAL_HOSTNAME='')
+        module = self.load_settings(**self.hosted(
+            DJANGO_ALLOWED_HOSTS='192.168.1.20, fixer.local'))
         self.assertFalse(module.DEBUG)
         self.assertEqual(module.ALLOWED_HOSTS, ['192.168.1.20', 'fixer.local'])
         self.assertTrue(module.SESSION_COOKIE_SECURE)
         self.assertTrue(module.CSRF_COOKIE_SECURE)
+        self.assertIn(r'^healthz/?$', module.SECURE_REDIRECT_EXEMPT)
+
+    # -- the database is the event ----------------------------------------
+
+    def test_a_hosted_deployment_refuses_to_start_on_sqlite(self):
+        """The Phase 4 blocker, now impossible to reach by accident.
+
+        A hosted filesystem is wiped on every deploy, so a SQLite file there
+        takes the whole event with it and says nothing.
+        """
+        message = self.assertRefuses('DATABASE_URL',
+                                     **self.hosted(DATABASE_URL=None))
+        self.assertIn('ephemeral', message)
+
+    def test_a_hosted_deployment_uses_the_postgres_url_it_was_given(self):
+        module = self.load_settings(**self.hosted())
+        engine = module.DATABASES['default']['ENGINE']
+        self.assertIn('postgresql', engine)
+        self.assertNotIn('sqlite', engine)
+        self.assertEqual(module.DATABASES['default']['NAME'], 'wf')
+
+    # -- the channel layer ------------------------------------------------
+
+    def test_a_hosted_deployment_refuses_to_start_without_redis(self):
+        message = self.assertRefuses('REDIS_URL', **self.hosted(REDIS_URL=None))
+        self.assertIn('second worker', message)
+
+    def test_a_hosted_deployment_uses_the_redis_channel_layer(self):
+        module = self.load_settings(**self.hosted())
+        layer = module.CHANNEL_LAYERS['default']
+        self.assertEqual(layer['BACKEND'],
+                         'channels_redis.core.RedisChannelLayer')
+        self.assertEqual(layer['CONFIG']['hosts'], ['redis://kv.internal:6379'])
+
+    # -- the one-machine event --------------------------------------------
+
+    def test_one_machine_may_still_run_the_event_on_sqlite_if_it_says_so(self):
+        """EVENT-OPERATIONS.md's lab deployment, kept working deliberately."""
+        module = self.load_settings(**self.hosted(
+            DATABASE_URL=None, REDIS_URL=None,
+            DJANGO_ALLOWED_HOSTS='192.168.1.20',
+            WF_SINGLE_MACHINE='true'))
+        self.assertFalse(module.DEBUG)
+        self.assertIn('sqlite', module.DATABASES['default']['ENGINE'])
+        self.assertEqual(module.CHANNEL_LAYERS['default']['BACKEND'],
+                         'channels.layers.InMemoryChannelLayer')
+
+    def test_the_single_machine_escape_is_opt_in_and_never_the_default(self):
+        module = self.load_settings(DJANGO_DEBUG='true')
+        self.assertFalse(module.SINGLE_MACHINE)
 
     def test_trusted_origins_can_be_configured_for_a_fest_domain(self):
-        module = self.load_settings(
-            DJANGO_DEBUG='false', DJANGO_SECRET_KEY='x' * 60,
+        module = self.load_settings(**self.hosted(
             DJANGO_ALLOWED_HOSTS='fixer.college.edu',
-            DJANGO_CSRF_TRUSTED_ORIGINS='https://fixer.college.edu',
-            RENDER_EXTERNAL_HOSTNAME='')
+            DJANGO_CSRF_TRUSTED_ORIGINS='https://fixer.college.edu'))
         self.assertIn('https://fixer.college.edu', module.CSRF_TRUSTED_ORIGINS)
 
     def test_the_channel_layer_is_in_memory_until_redis_is_configured(self):
-        module = self.load_settings(DJANGO_DEBUG='true', REDIS_URL='')
+        module = self.load_settings(DJANGO_DEBUG='true')
         self.assertEqual(
             module.CHANNEL_LAYERS['default']['BACKEND'],
             'channels.layers.InMemoryChannelLayer')
@@ -803,6 +902,91 @@ class DeploymentConfigTests(TestCase):
         self.assertNotIn('redis://', source.replace(
             "os.environ.get('REDIS_URL', '')", ''))
 
+    @staticmethod
+    def blueprint():
+        """render.yaml, parsed. Skips if PyYAML is not installed."""
+        import unittest
+        from pathlib import Path
+        from django.conf import settings as live
+        try:
+            import yaml
+        except ImportError:                                 # pragma: no cover
+            raise unittest.SkipTest(
+                'PyYAML is not installed — pip install -r requirements-dev.txt')
+        return yaml.safe_load(
+            (Path(live.BASE_DIR) / 'render.yaml').read_text(encoding='utf-8'))
+
+    def test_the_blueprint_declares_the_three_resources_the_event_needs(self):
+        """render.yaml must not quietly leave the event on an ephemeral disk."""
+        blueprint = self.blueprint()
+
+        databases = blueprint['databases']
+        self.assertEqual(len(databases), 1)
+        self.assertIn('postgresMajorVersion', databases[0])
+
+        kinds = {service['type'] for service in blueprint['services']}
+        self.assertIn('web', kinds)
+        self.assertIn('keyvalue', kinds)
+
+        web = next(s for s in blueprint['services'] if s['type'] == 'web')
+        # WebSockets: this cannot become a WSGI server.
+        self.assertIn('daphne', web['startCommand'])
+        self.assertIn('games.asgi:application', web['startCommand'])
+        self.assertIn('$PORT', web['startCommand'])
+        self.assertEqual(web['healthCheckPath'], '/healthz/')
+
+        keyvalue = next(s for s in blueprint['services']
+                        if s['type'] == 'keyvalue')
+        # Required by Render, and empty means internal-only.
+        self.assertIn('ipAllowList', keyvalue)
+
+    def test_the_blueprint_wires_every_variable_the_settings_require(self):
+        blueprint = self.blueprint()
+        web = next(s for s in blueprint['services'] if s['type'] == 'web')
+        env = {item['key']: item for item in web['envVars']}
+
+        self.assertEqual(env['DJANGO_DEBUG']['value'], 'false')
+        self.assertTrue(env['SECRET_KEY']['generateValue'])
+        self.assertTrue(env['WF_ADMIN_PASSWORD']['generateValue'])
+        self.assertEqual(env['DATABASE_URL']['fromDatabase']['property'],
+                         'connectionString')
+        self.assertEqual(env['REDIS_URL']['fromService']['type'], 'keyvalue')
+        self.assertEqual(env['REDIS_URL']['fromService']['property'],
+                         'connectionString')
+
+    def test_the_blueprint_carries_no_secret_value(self):
+        from pathlib import Path
+        from django.conf import settings as live
+
+        # The text half needs no parser, so it always runs.
+        text = (Path(live.BASE_DIR) / 'render.yaml').read_text(encoding='utf-8')
+        self.assertNotIn('postgres://', text)
+        self.assertNotIn('redis://', text)
+        self.assertNotIn('piyush', text.lower())
+
+        web = next(s for s in self.blueprint()['services']
+                   if s['type'] == 'web')
+        for item in web['envVars']:
+            if item['key'] in ('SECRET_KEY', 'WF_ADMIN_PASSWORD',
+                               'DATABASE_URL', 'REDIS_URL'):
+                self.assertNotIn('value', item,
+                                 f'{item["key"]} is written into the blueprint')
+
+    def test_the_build_command_fails_loudly_rather_than_shipping_a_bad_schema(self):
+        from pathlib import Path
+        from django.conf import settings as live
+
+        build = (Path(live.BASE_DIR) / 'build.sh').read_text(encoding='utf-8')
+        self.assertIn('set -o errexit', build)
+        self.assertIn('set -o pipefail', build)
+        self.assertIn('makemigrations --check', build)
+        self.assertIn('migrate --no-input', build)
+        self.assertIn('collectstatic --no-input', build)
+        self.assertIn('ensure_admin', build)
+        # Nothing may swallow a failure.
+        self.assertNotIn('|| true', build)
+        self.assertNotIn('set +e', build)
+
     def test_the_websocket_client_derives_its_scheme_from_the_page(self):
         """https must give wss; no localhost is ever hardcoded."""
         from pathlib import Path
@@ -814,6 +998,63 @@ class DeploymentConfigTests(TestCase):
             self.assertIn("'ws://'", source, name)
             self.assertNotIn('ws://localhost', source, name)
             self.assertNotIn('ws://127.0.0.1', source, name)
+
+
+# ==========================================================================
+# The platform's health check
+# ==========================================================================
+
+class HealthCheckTests(RaceMixin, TestCase):
+    def setUp(self):
+        self.url = reverse('healthz')
+
+    def test_it_answers_without_a_participant(self):
+        response = Client().get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(),
+                         {'status': 'ok', 'database': True})
+
+    def test_it_is_never_cached(self):
+        self.assertIn('no-store', Client().get(self.url)['Cache-Control'])
+
+    def test_it_reports_unhealthy_when_the_database_is_unreachable(self):
+        from unittest import mock
+        with mock.patch('first.views.connection') as fake:
+            fake.cursor.side_effect = Exception('connection refused to db.internal')
+            response = Client().get(self.url)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(response.json()['database'])
+        # A public endpoint must not publish the database host in an error.
+        self.assertNotIn('db.internal', response.content.decode())
+
+    def test_it_changes_no_race(self):
+        user, client = self.make_player('Healthy', pc_no='PC-01')
+        self.start_race(client, user)
+        self.drive_course(client, user, repairs=3)
+        user.refresh_from_db()
+        before = (user.race_started_at, user.race_repairs, user.best_score,
+                  user.race_distance)
+
+        for _ in range(5):
+            self.assertEqual(Client().get(self.url).status_code, 200)
+
+        user.refresh_from_db()
+        self.assertEqual(
+            (user.race_started_at, user.race_repairs, user.best_score,
+             user.race_distance), before)
+
+    def test_it_creates_no_participant_and_no_session(self):
+        Client().get(self.url)
+        self.assertEqual(User.objects.count(), 0)
+
+    def test_it_is_not_a_race_endpoint(self):
+        """The health check must never be able to start an attempt."""
+        self.assertNotEqual(self.url, reverse('api_race_start'))
+        user, client = self.make_player('Untouched', pc_no='PC-02')
+        client.get(self.url)
+        user.refresh_from_db()
+        self.assertEqual(user.race_status, RACE_NOT_STARTED)
 
 
 # ==========================================================================
