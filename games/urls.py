@@ -46,4 +46,5 @@ urlpatterns = [
          name='scoreboard_player'),
     path('scoreboard/<int:participant_id>/site/', views.scoreboard_player_preview,
          name='scoreboard_player_preview'),
+    path('scoreboard/results.csv', views.scoreboard_export, name='scoreboard_export'),
 ]

@@ -14,8 +14,12 @@ It exists for two real jobs:
 Because the second one is a judgement call, wiping a real attempt requires
 `--yes` and prints exactly what it is about to destroy first.
 
-    python manage.py reset_race PC-12 --yes      # clear that attempt
-    python manage.py reset_race PC-TEST --new    # fresh test participant
+    python manage.py reset_race Rahul --yes       # clear that attempt
+    python manage.py reset_race Tester --new      # fresh test participant
+
+It takes a *participant*, not a PC number. A machine is used by one person
+after another all day, so "PC-14" identifies three people by the afternoon and
+could not say which of their races to clear.
 """
 
 from django.core.management.base import BaseCommand, CommandError
@@ -44,7 +48,7 @@ class Command(BaseCommand):
     help = "Clear a participant's race attempt, or create a fresh test participant."
 
     def add_arguments(self, parser):
-        parser.add_argument('pc_no', help='the participant to act on')
+        parser.add_argument('participant', help='the participant name to act on')
         parser.add_argument(
             '--new', action='store_true',
             help='create the participant if they do not exist yet')
@@ -52,34 +56,48 @@ class Command(BaseCommand):
             '--password', default=DEFAULT_TEST_PASSWORD,
             help=f'password for --new (default: {DEFAULT_TEST_PASSWORD})')
         parser.add_argument(
+            '--pc-no', default='PC-TEST',
+            help='PC number to record for --new (default: PC-TEST)')
+        parser.add_argument(
             '--yes', action='store_true',
             help='confirm clearing an attempt that has already been started')
 
     def handle(self, *args, **options):
-        pc_no = options['pc_no'].strip()
-        if not pc_no:
-            raise CommandError('A PC number is required.')
+        name = options['participant'].strip()
+        if not name:
+            raise CommandError('A participant name is required.')
 
-        user = User.objects.filter(pc_no=pc_no).first()
+        user = User.objects.filter(username=name).first()
 
         if user is None:
             if not options['new']:
+                # A PC number is the likeliest thing to be typed here by
+                # mistake, so say who is actually sitting at it.
+                seated = list(User.objects.filter(pc_no=name)
+                              .values_list('username', flat=True))
+                if seated:
+                    raise CommandError(
+                        f'{name!r} is a PC number, not a participant. '
+                        f'{len(seated)} participant(s) raced on it: '
+                        f'{", ".join(sorted(seated))}. Name the one you mean.')
                 raise CommandError(
-                    f'No participant {pc_no!r}. Pass --new to create one.')
+                    f'No participant {name!r}. Pass --new to create one.')
             user = User.objects.create_user(
-                username=pc_no, pc_no=pc_no, password=options['password'])
+                username=name, pc_no=options['pc_no'], password=options['password'])
             self.stdout.write(self.style.SUCCESS(
-                f'Created participant {pc_no} with a fresh, unstarted race.'))
+                f'Created participant {name} on {options["pc_no"]} '
+                f'with a fresh, unstarted race.'))
             return
 
         if user.race_started_at is None and not user.race_repairs:
             self.stdout.write(
-                f'{pc_no} has not started a race - nothing to clear.')
+                f'{name} has not started a race - nothing to clear.')
             return
 
         # Say out loud what is about to be destroyed, before destroying it.
         self.stdout.write(self.style.WARNING(
-            f'{pc_no} has an official attempt on record:'))
+            f'{name} has an official attempt on record:'))
+        self.stdout.write(f'  PC number   : {user.pc_no}')
         self.stdout.write(f'  status      : {user.race_status}')
         self.stdout.write(f'  started at  : {user.race_started_at}')
         self.stdout.write(f'  completed at: {user.race_completed_at}')
@@ -101,6 +119,6 @@ class Command(BaseCommand):
         user.save(update_fields=list(RACE_FIELDS))
 
         self.stdout.write(self.style.SUCCESS(
-            f'Cleared the race attempt for {pc_no}'
+            f'Cleared the race attempt for {name}'
             f'{f" and removed {submissions} submission record(s)" if submissions else ""}. '
             f'They can start one official attempt again.'))

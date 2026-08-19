@@ -8,6 +8,8 @@ WebSocket works both locally and on Render.
 from pathlib import Path
 import os
 
+from django.core.exceptions import ImproperlyConfigured
+
 import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -20,15 +22,29 @@ def _env_bool(name, default=False):
 
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-1)*yy1*vlg4_m@(3l7rl(y+yocy#@e^f)pze6=)onh^6)(-3dq',
-)
+_DEV_SECRET_KEY = 'django-insecure-1)*yy1*vlg4_m@(3l7rl(y+yocy#@e^f)pze6=)onh^6)(-3dq'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', _DEV_SECRET_KEY)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _env_bool('DJANGO_DEBUG', True)
 
-ALLOWED_HOSTS = ['*']
+# Shipping the development key to production would let anybody forge a session
+# cookie, and it is the kind of mistake that stays invisible until it matters.
+# Fail at start-up instead, where somebody is watching.
+if not DEBUG and SECRET_KEY == _DEV_SECRET_KEY:
+    raise ImproperlyConfigured(
+        'DJANGO_SECRET_KEY must be set when DEBUG is off. Generate one with: '
+        'python -c "from django.core.management.utils import '
+        'get_random_secret_key as k; print(k())"'
+    )
+
+# The event usually runs on a LAN where the host header is whatever the
+# organiser typed, so '*' stays the default. Set DJANGO_ALLOWED_HOSTS to a
+# comma-separated list to lock it down on a public deployment.
+ALLOWED_HOSTS = [
+    host.strip() for host in
+    os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',') if host.strip()
+]
 
 # Render exposes the public hostname here; needed for POST/CSRF over HTTPS.
 CSRF_TRUSTED_ORIGINS = ['https://*.onrender.com']
@@ -61,6 +77,9 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Last on purpose: it needs request.user, and WhiteNoise has already
+    # answered for /static/ by this point so real assets still cache.
+    'first.middleware.PrivateResponsesNoStoreMiddleware',
 ]
 
 ROOT_URLCONF = 'games.urls'

@@ -66,6 +66,7 @@ from .scoreboard import (
     player_payload,
     schedule_scoreboard_event,
     scoreboard_snapshot,
+    write_export,
 )
 
 # Everything the templates need to name the current round in one place.
@@ -876,3 +877,21 @@ def scoreboard_player_preview(request, participant_id):
         # Not started, or the clock beat them: the site is still broken.
         collected = []
     return _render_novacloud(repair_css(collected))
+
+
+@organiser_only
+def scoreboard_export(request):
+    """The judging sheet, as a CSV download.
+
+    One row per participant run — so a PC used by three people all day is
+    three rows, each with its own result. Nothing is ranked and no winner is
+    named: the organisers compare the completed runs and decide.
+    """
+    finalize_all_due()
+    stamp = timezone.localtime().strftime('%Y%m%d-%H%M')
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = (
+        f'attachment; filename="website-fixer-results-{stamp}.csv"')
+    response['Cache-Control'] = 'no-store'
+    write_export(response)
+    return response

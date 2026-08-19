@@ -148,3 +148,65 @@ def schedule_scoreboard_event(user, event):
     """Broadcast only after the current database transaction has committed."""
     transaction.on_commit(lambda: _broadcast_after_commit(user.pk, event))
 
+
+
+# ---------------------------------------------------------------- export ----
+
+# The judging sheet. Deliberately a fixed, explicit column list: adding a
+# field to the participant model must not silently start publishing it.
+EXPORT_COLUMNS = (
+    'participant', 'pc_no', 'status', 'registered_at', 'started_at',
+    'completed_at', 'elapsed_seconds', 'elapsed', 'repairs', 'repair_total',
+    'repairs_collected', 'penalties', 'score', 'max_score', 'distance_m',
+    'section', 'eligible',
+)
+
+
+def export_rows():
+    """One row per participant run, oldest registration first.
+
+    Ordered by registration so a PC that was used all day reads down the sheet
+    in the order people sat at it. Every run is its own row: three people on
+    PC-14 are three rows, and none of them is a summary of the others.
+    """
+    from .game_config import RACE_MAX_SCORE
+
+    for user in User.objects.filter(is_admin=False).order_by('registered_at', 'pk'):
+        player = player_payload(user)
+        state = player['state']
+        elapsed = state['elapsed']
+        yield {
+            'participant': player['player'],
+            'pc_no': user.pc_no,
+            'status': state['status'],
+            'registered_at': user.registered_at.isoformat() if user.registered_at else '',
+            'started_at': user.race_started_at.isoformat() if user.race_started_at else '',
+            'completed_at': (user.race_completed_at.isoformat()
+                             if user.race_completed_at else ''),
+            'elapsed_seconds': elapsed,
+            'elapsed': f'{elapsed // 60:02d}:{elapsed % 60:02d}' if user.race_started_at else '',
+            'repairs': ' '.join(user.repair_ids),
+            'repair_total': REPAIR_COUNT,
+            'repairs_collected': state['repairs'],
+            'penalties': state['penalties'],
+            'score': state['score'],
+            'max_score': RACE_MAX_SCORE,
+            'distance_m': state['distance'],
+            'section': state['section_label'],
+            # Whether the run counts as a completed one for judging. It is not
+            # a placing: the organisers pick the single winner themselves.
+            'eligible': 'yes' if state['status'] == RACE_COMPLETED else 'no',
+        }
+
+
+def write_export(handle):
+    """Write the judging CSV to any text file-like object."""
+    import csv
+
+    writer = csv.DictWriter(handle, fieldnames=list(EXPORT_COLUMNS))
+    writer.writeheader()
+    count = 0
+    for row in export_rows():
+        writer.writerow(row)
+        count += 1
+    return count
